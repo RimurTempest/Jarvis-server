@@ -1,8 +1,8 @@
 
-import { SYSTEM_PROMPT } from "./behavior.js";
 import express from "express";
 import OpenAI from "openai";
 import { timingSafeEqual } from "node:crypto";
+import { SYSTEM_PROMPT } from "./behavior.js";
 
 const app = express();
 
@@ -19,20 +19,29 @@ const OPENAI_MODEL =
 
 function validToken(req) {
   const expected = process.env.JARVIS_API_TOKEN;
+
   const match = req
     .get("authorization")
     ?.match(/^Bearer ([^\s]+)$/i);
 
-  if (!expected || !match) return false;
+  if (!expected || !match) {
+    return false;
+  }
 
-  const a = Buffer.from(expected, "utf8");
-  const b = Buffer.from(match[1], "utf8");
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const suppliedBuffer = Buffer.from(match[1], "utf8");
 
-  return a.length === b.length && timingSafeEqual(a, b);
+  return (
+    expectedBuffer.length === suppliedBuffer.length &&
+    timingSafeEqual(expectedBuffer, suppliedBuffer)
+  );
 }
 
 app.get("/", (_req, res) => {
-  res.json({ status: "online", service: "JARVIS" });
+  res.json({
+    status: "online",
+    service: "JARVIS"
+  });
 });
 
 function getProviders() {
@@ -61,32 +70,44 @@ function getProviders() {
 async function openStream(provider, message) {
   const client = new OpenAI({
     apiKey: provider.apiKey,
-    ...(provider.baseURL ? { baseURL: provider.baseURL } : {}),
+    ...(provider.baseURL
+      ? { baseURL: provider.baseURL }
+      : {}),
     timeout: 45000,
     maxRetries: 0
   });
 
-  const stream = await client.chat.completions.create({
+  return client.chat.completions.create({
     model: provider.model,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: message }
+      {
+        role: "system",
+        content: SYSTEM_PROMPT
+      },
+      {
+        role: "user",
+        content: message
+      }
     ],
     max_completion_tokens: 600,
     stream: true
   });
-
-  return stream;
 }
 
-// Transmite NDJSON: um objeto JSON por linha.
+// Cada linha enviada ao aplicativo contém um objeto JSON independente.
 function sendEvent(res, event) {
+  if (res.destroyed || res.writableEnded) {
+    return;
+  }
+
   res.write(JSON.stringify(event) + "\n");
 }
 
 app.post("/api/chat", async (req, res) => {
   if (!validToken(req)) {
-    return res.status(401).json({ error: "Unauthorized." });
+    return res.status(401).json({
+      error: "Unauthorized."
+    });
   }
 
   const message = req.body?.message;
@@ -111,23 +132,30 @@ app.post("/api/chat", async (req, res) => {
 
   for (const provider of providers) {
     let stream;
+    let iterator;
 
     try {
       stream = await openStream(provider, message.trim());
 
-      // Aguarda o primeiro trecho antes de iniciar a resposta HTTP.
-      // Assim, ainda podemos tentar o próximo provedor se falhar cedo.
+      // Cria o iterador assíncrono explicitamente.
+      iterator = stream[Symbol.asyncIterator]();
+
+      // Aguarda o primeiro trecho de texto antes de enviar
+      // os cabeçalhos. Assim, ainda podemos tentar o fallback
+      // caso o provedor falhe antes de começar a resposta.
       let firstDelta = "";
+      let streamEnded = false;
 
-      while (true) {
-        const result = await stream.next();
+      while (!firstDelta && !streamEnded) {
+        const result = await iterator.next();
 
-        if (result.done) break;
+        if (result.done) {
+          streamEnded = true;
+          break;
+        }
 
         firstDelta =
-          result.value.choices?.[0]?.delta?.content || "";
-
-        if (firstDelta) break;
+          result.value?.choices?.[0]?.delta?.content || "";
       }
 
       if (!firstDelta) {
@@ -139,8 +167,12 @@ app.post("/api/chat", async (req, res) => {
         "Content-Type",
         "application/x-ndjson; charset=utf-8"
       );
-      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader(
+        "Cache-Control",
+        "no-cache, no-transform"
+      );
       res.setHeader("X-Accel-Buffering", "no");
+
       res.flushHeaders();
 
       sendEvent(res, {
@@ -149,49 +181,79 @@ app.post("/api/chat", async (req, res) => {
       });
 
       try {
-        while (true) {
-          const result = await stream.next();
-          if (result.done) break;
+        while (!streamEnded) {
+          if (res.destroyed || res.writableEnded) {
+            break;
+          }
+
+          const result = await iterator.next();
+
+          if (result.done) {
+            streamEnded = true;
+            break;
+          }
 
           const delta =
-            result.value.choices?.[0]?.delta?.content || "";
+            result.value?.choices?.[0]?.delta?.content || "";
 
           if (delta) {
             sendEvent(res, { delta });
           }
         }
 
-        sendEvent(res, { done: true });
-        console.log(`Streaming completed using ${provider.name}.`);
+        if (!res.destroyed && !res.writableEnded) {
+          sendEvent(res, { done: true });
+        }
+
+        console.log(
+          `Streaming completed using ${provider.name}.`
+        );
       } catch (error) {
         console.error("Streaming interrupted:", {
           provider: provider.name,
-          type: error instanceof Error
-            ? error.name
-            : "UnknownError"
+          type:
+            error instanceof Error
+              ? error.name
+              : "UnknownError"
         });
 
-        sendEvent(res, {
-          error: "A conexão com o provedor foi interrompida."
-        });
+        if (!res.destroyed && !res.writableEnded) {
+          sendEvent(res, {
+            error: "A conexão com o provedor foi interrompida."
+          });
+        }
       } finally {
-        res.end();
+        if (!res.destroyed && !res.writableEnded) {
+          res.end();
+        }
       }
 
       return;
     } catch (error) {
       console.error("AI provider failed:", {
         provider: provider.name,
-        status: error instanceof OpenAI.APIError
-          ? error.status
-          : undefined,
-        type: error instanceof Error
-          ? error.name
-          : "UnknownError"
+        status:
+          error instanceof OpenAI.APIError
+            ? error.status
+            : undefined,
+        type:
+          error instanceof Error
+            ? error.name
+            : "UnknownError"
       });
 
+      if (iterator?.return) {
+        try {
+          await iterator.return();
+        } catch {
+          // Não substitui o erro original.
+        }
+      }
+
       if (res.headersSent) {
-        if (!res.writableEnded) res.end();
+        if (!res.destroyed && !res.writableEnded) {
+          res.end();
+        }
         return;
       }
     }
@@ -199,7 +261,8 @@ app.post("/api/chat", async (req, res) => {
 
   if (!res.headersSent) {
     return res.status(503).json({
-      error: "All configured AI providers are temporarily unavailable."
+      error:
+        "All configured AI providers are temporarily unavailable."
     });
   }
 });
