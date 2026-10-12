@@ -121,7 +121,7 @@ test("evidence without a valid HTTPS reference, timestamp or scope is rejected",
   malformed[0] = evidence("source_review", {
     reference: "javascript:alert(1)",
     observedAt: "yesterday",
-    scope: "",
+    scope: "declared test scope",
   });
   assert.throws(
     () => transitionCapability(testing, { state: "validated", evidence: malformed }),
