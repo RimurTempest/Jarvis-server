@@ -42,7 +42,7 @@ function canonicalEvidence(evidence) {
 
 function signatureFor(evidence, issuer, secret) {
   return createHmac("sha256", secret)
-    .update("jarvis-capability-evidence-v1\n", "utf8")
+    .update("jarvis-capability-evidence-v2\n", "utf8")
     .update(issuer, "utf8")
     .update("\n", "utf8")
     .update(canonicalEvidence(evidence), "utf8")
@@ -95,7 +95,7 @@ export function attestCapabilityEvidence(evidence, { issuer, secret } = {}) {
   return {
     ...evidence,
     attestation: {
-      version: 1,
+      version: 2,
       issuer,
       signature: signatureFor(evidence, issuer, secret),
     },
@@ -113,7 +113,7 @@ export function verifyCapabilityEvidenceAttestation(evidence, trustedIssuers = {
   const attestation = evidence.attestation;
   if (
     !attestation ||
-    attestation.version !== 1 ||
+    attestation.version !== 2 ||
     !ALLOWED_ISSUERS.has(attestation.issuer) ||
     typeof attestation.signature !== "string"
   ) return false;
