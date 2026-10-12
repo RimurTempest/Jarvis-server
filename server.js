@@ -730,7 +730,7 @@ app.patch("/api/capabilities/:id", requireAuth, async (req, res) => {
     const selected = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [id]);
     if (!selected.rowCount) return res.status(404).json({ error: "Capacidade não encontrada." });
     const current = selected.rows[0].record;
-    const fields = ["state", "research", "requirements", "executionPlan", "evidence", "reason"];
+    const fields = ["state", "research", "requirements", "executionPlan", "sourceRevision", "evidence", "reason"];
     const event = {};
     for (const field of fields) if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) event[field] = req.body[field];
     const next = transitionCapability(current, event);
