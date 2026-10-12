@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
 import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
+import { registerAndroidActionRoutes } from "./jarvis-capabilities/android-action-routes.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -995,6 +996,8 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   sendEvent(res, "done", {});
   return res.end();
 });
+
+registerAndroidActionRoutes(app, { pool, initializeDatabase });
 
 app.use((error, _req, res, _next) => {
   if (res.headersSent) return res.end();
