@@ -1,3 +1,5 @@
+import { verifyCapabilityEvidenceAttestation } from "./capability-evidence-attestation.mjs";
+
 /**
  * Generic, fail-closed capability validation policy.
  *
@@ -55,7 +57,7 @@ export function requiredCapabilityEvidence(profile = {}) {
  * Evaluates completeness and consistency, not who created the evidence.
  * Evidence records must include a stable HTTPS reference, ISO timestamp and scope.
  */
-export function evaluateCapabilityEvidence(evidence, profile = {}) {
+export function evaluateCapabilityEvidence(evidence, profile = {}, { trustedIssuers = {} } = {}) {
   let required;
   try {
     required = requiredCapabilityEvidence(profile);
@@ -94,7 +96,7 @@ export function evaluateCapabilityEvidence(evidence, profile = {}) {
     if (!nonEmpty(item.scope) || item.scope.trim().length > 500) {
       invalid.push(`${prefix}.scope inválido.`);
     }
-    if (item.passed === true && ALLOWED_EVIDENCE_KINDS.has(item.kind)) passedKinds.add(item.kind);
+    if (!verifyCapabilityEvidenceAttestation(item, trustedIssuers)) {\n      invalid.push(`${prefix}.attestation não é válida para um emissor confiável.`);\n    }\n    if (item.passed === true && ALLOWED_EVIDENCE_KINDS.has(item.kind)) passedKinds.add(item.kind);
   });
 
   const missing = required.filter((kind) => !passedKinds.has(kind));
