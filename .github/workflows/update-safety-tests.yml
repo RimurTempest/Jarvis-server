@@ -45,9 +45,11 @@ jobs:
           node --check validate-release.mjs
           node --check test/validate-release.test.mjs
           node --check ../jarvis-capabilities/capability-registry.mjs
+          node --check ../jarvis-capabilities/learning-intent.mjs
           node --check ../jarvis-capabilities/test/capability-registry.test.mjs
 
       - name: Run automated tests
         run: |
           node --test test/validate-release.test.mjs
           node --test ../jarvis-capabilities/test/capability-registry.test.mjs
+          node --test ../jarvis-capabilities/test/learning-intent.test.mjs
