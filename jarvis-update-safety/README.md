@@ -6,7 +6,7 @@ Esta pasta é um **módulo inicial isolado**, ainda não conectado ao deploy do 
 
 - `feature-registry.json`: inventário inicial de funções conhecidas do JARVIS.
 - `validate-release.mjs`: valida o relatório de regressão; falha se uma função obrigatória não tiver resultado `pass` com evidência, se o rollback/banco/assinatura não tiverem sido verificados, ou se faltarem dados de versão.
-- `test/validate-release.test.mjs`: testes automatizados do próprio bloqueio.
+- `test/validate-release.test.mjs`: testes automatizados do próprio bloqueio, incluindo um contrato para detectar remoções acidentais das funcionalidades de baseline.
 - `examples/regression-report.example.json`: formato de exemplo, deliberadamente marcado como **não liberável** até que verificações reais sejam executadas.
 
 ## Executar os testes
