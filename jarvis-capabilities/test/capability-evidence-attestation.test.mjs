@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { attestCapabilityEvidence, verifyCapabilityEvidenceAttestation } from "../capability-evidence-attestation.mjs";
+import { attestCapabilityEvidence, verifyCapabilityEvidenceAttestation, loadTrustedCapabilityEvidenceIssuers } from "../capability-evidence-attestation.mjs";
 
 const secret = "trusted-runner-secret-0123456789abcdef";
 const trustedIssuers = { "automated-test-runner": secret };
@@ -30,4 +30,14 @@ test("unknown issuers and missing or short secrets fail closed", () => {
 });
 test("required signed fields cannot be omitted", () => {
   assert.throws(() => attestCapabilityEvidence({ kind: "automated_test" }, { issuer: "automated-test-runner", secret }), /summary é obrigatório/);
+});
+
+test("environment loader accepts only sufficiently long configured issuer secrets", () => {
+  const loaded = loadTrustedCapabilityEvidenceIssuers({
+    JARVIS_EVIDENCE_KEY_AUTOMATED_TEST: secret,
+    JARVIS_EVIDENCE_KEY_CODE_REVIEW: "short",
+    JARVIS_EVIDENCE_KEY_SOURCE_REVIEW: "",
+  });
+  assert.deepEqual(Object.keys(loaded), ["automated-test-runner"]);
+  assert.equal(loaded["automated-test-runner"], secret);
 });
