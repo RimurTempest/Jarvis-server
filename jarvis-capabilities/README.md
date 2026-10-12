@@ -14,8 +14,19 @@ Any stage may be blocked when a requirement, permission, safe execution path, or
 - A capability is reusable only when it has a concrete execution plan and explicit passing test evidence.
 - Evidence entries must have a type, a summary, and a boolean pass/fail result.
 - Research text and plans are data, not executable code.
-- The module records lifecycle state; it does not itself invoke Android actions, install applications, or claim that a real-world action succeeded.
+- The authenticated API refuses direct transition to `validated`; final validation must be performed by a trusted test executor.
+- The module does not itself invoke Android actions, install applications, or claim that a real-world action succeeded.
 
-## Current integration status
+## API and persistence status
 
-This is the first isolated foundation and its tests are wired into GitHub Actions. It is **not yet integrated into the Express API, PostgreSQL persistence, or Android action dispatcher**. Do not describe the overall JARVIS as able to learn and execute new actions until those integrations and end-to-end tests exist.
+The generic lifecycle is now connected to authenticated Express endpoints and PostgreSQL persistence:
+
+- `POST /api/capabilities` creates a generic learning request using `{ "goal": "..." }`.
+- `GET /api/capabilities` lists stored capabilities; optional `?state=...` filters by lifecycle state.
+- `PATCH /api/capabilities/:id` advances an existing capability through permitted states and records research, requirements, a plan, or test evidence.
+
+All endpoints require the existing JARVIS bearer token. Requests containing text that resembles credentials or sensitive identifiers are rejected. The API blocks client-submitted final validation to avoid accepting self-asserted test success.
+
+## Still not implemented
+
+This is a backend lifecycle and persistence foundation, not yet an autonomous learning-and-execution system. It does not yet research a goal automatically, create executable Android integrations, invoke Android actions, or run end-to-end device tests. Those must be built and verified before JARVIS can claim to learn and perform arbitrary new tasks.
