@@ -7,6 +7,29 @@ import {
 } from "../capability-registry.mjs";
 
 const observedAt = "2026-10-12T00:00:00.000Z";
+import { attestCapabilityEvidence } from "../capability-evidence-attestation.mjs";
+
+const TRUSTED_ISSUERS = {
+  "source-review-runner": "test-source-review-secret-0123456789abcdef",
+  "code-review-runner": "test-code-review-secret-0123456789abcdef",
+  "automated-test-runner": "test-automated-test-secret-0123456789abcdef",
+  "security-review-runner": "test-security-review-secret-0123456789abcdef",
+  "android-device-test-runner": "test-device-test-secret-0123456789abcdef"
+};
+const ISSUER_BY_KIND = {
+  source_review: "source-review-runner",
+  code_review: "code-review-runner",
+  automated_test: "automated-test-runner",
+  security_review: "security-review-runner",
+  device_test: "android-device-test-runner",
+};
+
+function transitionCapability(current, event) {
+  return rawTransitionCapability(current, event, { trustedIssuers: TRUSTED_ISSUERS });
+}
+function capabilityCanBeReused(capability) {
+  return rawCapabilityCanBeReused(capability, { trustedIssuers: TRUSTED_ISSUERS });
+}
 
 function evidence(kind, overrides = {}) {
   return {
