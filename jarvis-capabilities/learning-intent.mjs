@@ -8,8 +8,8 @@ export function detectCapabilityLearningRequest(message) {
 
   const patterns = [
     /^(?:jarvis[,! ]+)?aprenda\s+(?:a\s+)?(?:fazer|realizar|executar|usar|conseguir|como\s+fazer|como\s+realizar|como\s+usar)\s+(.+?)\s*[.!?]*$/i,
-    /^(?:quero\s+que\s+voce\s+)?aprenda\s+(?:a\s+)?(?:fazer|realizar|executar|usar|conseguir|como\s+fazer|como\s+realizar|como\s+usar)\s+(.+?)\s*[.!?]*$/i,
-    /^(?:quero\s+que\s+voce\s+)?aprenda\s+(.+?)\s*[.!?]*$/i,
+    /^(?:quero\s+que\s+voc[eê]\s+)?aprenda\s+(?:a\s+)?(?:fazer|realizar|executar|usar|conseguir|como\s+fazer|como\s+realizar|como\s+usar)\s+(.+?)\s*[.!?]*$/i,
+    /^(?:quero\s+que\s+voc[eê]\s+)?aprenda\s+(.+?)\s*[.!?]*$/i,
     /^(?:learn\s+to|learn\s+how\s+to)\s+(.+?)\s*[.!?]*$/i,
     /^(?:i\s+want\s+you\s+to\s+learn\s+to)\s+(.+?)\s*[.!?]*$/i,
   ];
