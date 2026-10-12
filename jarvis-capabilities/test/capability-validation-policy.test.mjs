@@ -65,7 +65,11 @@ test("unknown evidence types and invalid profiles fail closed", () => {
   assert.throws(() => requiredCapabilityEvidence({ requiresDeviceTest: "yes" }), /booleano/);
 });
 test("missing trusted issuer configuration prevents validation", () => {
-  const result = evaluateCapabilityEvidence([evidence("source_review"), evidence("code_review"), evidence("automated_test")]);
+  const result = evaluateCapabilityEvidence(
+    [evidence("source_review"), evidence("code_review"), evidence("automated_test")],
+    {},
+    { capabilityId, sourceRevision },
+  );
   assert.equal(result.ok, false);
   assert.ok(result.invalid.some((item) => item.includes("attestation")));
 });
