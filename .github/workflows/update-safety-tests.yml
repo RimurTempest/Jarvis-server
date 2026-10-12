@@ -6,10 +6,16 @@ on:
       - main
       - feature/update-safety-foundation
     paths:
+      - "server.js"
+      - "behavior.js"
+      - "package.json"
       - "jarvis-update-safety/**"
       - ".github/workflows/update-safety-tests.yml"
   pull_request:
     paths:
+      - "server.js"
+      - "behavior.js"
+      - "package.json"
       - "jarvis-update-safety/**"
       - ".github/workflows/update-safety-tests.yml"
   workflow_dispatch:
@@ -28,6 +34,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check ../server.js
+          node --check ../behavior.js
+          node --check validate-release.mjs
+          node --check test/validate-release.test.mjs
 
       - name: Run automated tests
         run: node --test test/validate-release.test.mjs

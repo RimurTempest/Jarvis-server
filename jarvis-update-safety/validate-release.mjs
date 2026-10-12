@@ -229,7 +229,12 @@ function main() {
   const result = validateRelease(registry, report);
   console.log(JSON.stringify(result, null, 2));
 
-  if (!result.ok) {
+  if (!result.installAllowed) {
+    if (result.ok) {
+      console.error(
+        'Instalação bloqueada: a aprovação explícita do responsável ainda não foi concedida.'
+      );
+    }
     process.exitCode = 1;
   }
 }

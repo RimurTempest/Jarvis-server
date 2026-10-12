@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { validateRelease } from '../validate-release.mjs';
 
 const registry = {
@@ -179,4 +184,46 @@ test('blocks malformed test results', () => {
   assert.ok(
     result.errors.some((error) => error.includes('featureId válido'))
   );
+});
+
+
+test('CLI returns non-zero when owner approval is pending and zero only when installation is allowed', () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), 'jarvis-release-validator-'));
+  const validatorPath = fileURLToPath(new URL('../validate-release.mjs', import.meta.url));
+  const registryPath = path.join(tempDir, 'registry.json');
+  const reportPath = path.join(tempDir, 'report.json');
+
+  try {
+    writeFileSync(registryPath, JSON.stringify(registry), 'utf8');
+    writeFileSync(reportPath, JSON.stringify(goodReport), 'utf8');
+
+    const pending = spawnSync(
+      process.execPath,
+      [validatorPath, '--registry', registryPath, '--report', reportPath],
+      { encoding: 'utf8' }
+    );
+
+    assert.equal(pending.status, 1);
+    assert.equal(JSON.parse(pending.stdout).ok, true);
+    assert.equal(JSON.parse(pending.stdout).installAllowed, false);
+    assert.match(pending.stderr, /aprovação explícita/i);
+
+    writeFileSync(
+      reportPath,
+      JSON.stringify({ ...goodReport, ownerApproval: 'approved' }),
+      'utf8'
+    );
+
+    const approved = spawnSync(
+      process.execPath,
+      [validatorPath, '--registry', registryPath, '--report', reportPath],
+      { encoding: 'utf8' }
+    );
+
+    assert.equal(approved.status, 0);
+    assert.equal(JSON.parse(approved.stdout).ok, true);
+    assert.equal(JSON.parse(approved.stdout).installAllowed, true);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });

@@ -25,7 +25,7 @@ Copie o exemplo para `regression-report.json`, substitua todos os valores de exe
 node validate-release.mjs --registry feature-registry.json --report regression-report.json
 ```
 
-Código de saída `0` significa que a política passou. Qualquer função ausente, falha, desconhecida ou sem evidência bloqueia a liberação. Mesmo com testes aprovados, `installAllowed` só é `true` quando `ownerApproval` é explicitamente `approved`.
+O campo `ok` indica se as verificações declaradas passaram; ele não autoriza, sozinho, a instalação. O campo `installAllowed` só será `true` quando todas as verificações passarem e `ownerApproval` for explicitamente `approved`. No modo de linha de comando, o código de saída é `0` somente quando a instalação está autorizada; falhas de validação ou aprovação pendente retornam `1`, e problemas ao ler os arquivos retornam `2`.
 
 ## Política para o exemplo microfone + memória
 
@@ -38,4 +38,4 @@ Se o microfone passar, mas a memória falhar, a validação bloqueia a atualiza�
 3. A verificação de assinatura deve comparar o certificado do APK candidato com o da versão instalada sem revelar nem embutir a keystore. O validador exige a confirmação dessa verificação, mas não a executa sozinho.
 4. A restauração do código não reverte automaticamente alterações no banco. Migrações e recuperação dos dados precisam ser testadas separadamente.
 5. O APK antigo não pode simplesmente ser instalado por downgrade de `versionCode` em condições normais do Android. A recuperação do app deve usar uma compilação estável assinada com a mesma chave e um `versionCode` superior.
-6. Não existe conexão ou publicação no GitHub/Render nesta entrega; o repositório remoto não foi alterado.
+6. O módulo e seu workflow estão versionados no GitHub. Eles ainda não estão integrados ao deploy do Render nem ao instalador Android, e não fazem backup, rollback ou instalação automática.
