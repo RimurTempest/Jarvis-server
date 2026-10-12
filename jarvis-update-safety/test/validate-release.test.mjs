@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -226,4 +226,37 @@ test('CLI returns non-zero when owner approval is pending and zero only when ins
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+
+test('protects the committed feature registry baseline from accidental removals and duplicate IDs', () => {
+  const registryPath = new URL('../feature-registry.json', import.meta.url);
+  const committedRegistry = JSON.parse(readFileSync(registryPath, 'utf8'));
+  const ids = committedRegistry.requiredFeatures.map((feature) => feature.id);
+  const baselineFeatureIds = [
+    'backend_health',
+    'chat_stream',
+    'persistent_memory',
+    'learning_events',
+    'web_search',
+    'voice_input',
+    'voice_output',
+    'main_ui'
+  ];
+
+  assert.ok(Array.isArray(committedRegistry.requiredFeatures));
+  assert.ok(committedRegistry.requiredFeatures.length > 0);
+  assert.equal(new Set(ids).size, ids.length, 'O registro contém IDs duplicados.');
+
+  for (const id of baselineFeatureIds) {
+    assert.ok(
+      ids.includes(id),
+      `A funcionalidade de baseline "${id}" foi removida do registro sem atualizar explicitamente o teste de baseline.`
+    );
+  }
+
+  assert.ok(
+    ids.every((id) => typeof id === 'string' && id.length > 0 && id === id.trim()),
+    'Todos os IDs do registro devem ser strings não vazias e sem espaços nas extremidades.'
+  );
 });
