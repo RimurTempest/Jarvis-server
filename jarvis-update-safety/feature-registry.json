@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "project": "JARVIS",
+  "policy": "A release must preserve every required feature unless the owner explicitly approves its removal.",
+  "requiredFeatures": [
+    {
+      "id": "backend_health",
+      "name": "Backend health endpoint",
+      "scope": "backend",
+      "critical": true,
+      "testCommand": "GET /health returns HTTP 200 and expected service fields"
+    },
+    {
+      "id": "chat_stream",
+      "name": "Authenticated chat and NDJSON streaming",
+      "scope": "backend+android",
+      "critical": true,
+      "testCommand": "Authenticated /api/chat returns valid delta/done events consumed by the Android parser"
+    },
+    {
+      "id": "persistent_memory",
+      "name": "Persistent memory in PostgreSQL",
+      "scope": "backend+database",
+      "critical": true,
+      "testCommand": "Create, retrieve, update/correct and delete memory; verify after a new session"
+    },
+    {
+      "id": "learning_events",
+      "name": "Learning/correction event persistence",
+      "scope": "backend+database",
+      "critical": true,
+      "testCommand": "Record a correction, restart the service, and verify the event remains retrievable"
+    },
+    {
+      "id": "web_search",
+      "name": "Selective web search through Exa",
+      "scope": "backend",
+      "critical": false,
+      "testCommand": "A query requiring current research invokes search and cites returned sources; normal chat does not falsely claim a search"
+    },
+    {
+      "id": "voice_input",
+      "name": "Android microphone / speech recognition",
+      "scope": "android",
+      "critical": true,
+      "testCommand": "Grant microphone permission, recognize speech, and send the resulting text"
+    },
+    {
+      "id": "voice_output",
+      "name": "Android text-to-speech output",
+      "scope": "android",
+      "critical": true,
+      "testCommand": "Receive a response and verify text-to-speech playback can start and stop"
+    },
+    {
+      "id": "main_ui",
+      "name": "Existing Android UI and hologram view",
+      "scope": "android",
+      "critical": true,
+      "testCommand": "Launch the app, render the main screen and hologram view, and verify no startup crash"
+    }
+  ],
+  "removalPolicy": "Never remove a required feature merely because a new feature was added. A removal requires explicit owner approval and a recorded reason."
+}

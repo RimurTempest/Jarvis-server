@@ -1,0 +1,18 @@
+{
+  "candidateVersion": "1.2.0",
+  "baselineVersion": "1.1.0",
+  "results": [
+    { "featureId": "backend_health", "status": "pass", "evidence": "GET /health returned HTTP 200 in CI" },
+    { "featureId": "chat_stream", "status": "pass", "evidence": "Authenticated NDJSON contract test passed" },
+    { "featureId": "persistent_memory", "status": "pass", "evidence": "Memory persistence integration test passed against isolated test DB" },
+    { "featureId": "learning_events", "status": "pass", "evidence": "Learning-event persistence test passed" },
+    { "featureId": "web_search", "status": "pass", "evidence": "Mocked Exa contract test passed" },
+    { "featureId": "voice_input", "status": "pass", "evidence": "Android device/emulator microphone test run ID: replace-with-real-run" },
+    { "featureId": "voice_output", "status": "pass", "evidence": "Android device/emulator TTS test run ID: replace-with-real-run" },
+    { "featureId": "main_ui", "status": "pass", "evidence": "Android startup/UI test run ID: replace-with-real-run" }
+  ],
+  "rollbackPrepared": false,
+  "databaseRecoveryVerified": false,
+  "androidSignatureVerified": false,
+  "ownerApproval": "pending"
+}
