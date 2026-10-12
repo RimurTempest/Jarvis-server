@@ -4,13 +4,17 @@ import { attestCapabilityEvidence, verifyCapabilityEvidenceAttestation, loadTrus
 
 const secret = "trusted-runner-secret-0123456789abcdef";
 const trustedIssuers = { "automated-test-runner": secret };
+const capabilityId = "generic-task-01";
+const sourceRevision = "a".repeat(40);
 const evidence = {
   kind: "automated_test",
   summary: "All automated tests passed",
   passed: true,
   reference: "https://github.com/example/repo/actions/runs/123",
   observedAt: "2026-10-12T00:00:00.000Z",
-  scope: "commit abc123",
+  scope: "commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  capabilityId,
+  sourceRevision,
 };
 
 test("trusted issuer can sign and verify evidence", () => {
@@ -21,6 +25,8 @@ test("tampering with a signed field invalidates the attestation", () => {
   const signed = attestCapabilityEvidence(evidence, { issuer: "automated-test-runner", secret });
   assert.equal(verifyCapabilityEvidenceAttestation({ ...signed, passed: false }, trustedIssuers), false);
   assert.equal(verifyCapabilityEvidenceAttestation({ ...signed, scope: "another commit" }, trustedIssuers), false);
+  assert.equal(verifyCapabilityEvidenceAttestation({ ...signed, capabilityId: "another-task" }, trustedIssuers), false);
+  assert.equal(verifyCapabilityEvidenceAttestation({ ...signed, sourceRevision: "b".repeat(40) }, trustedIssuers), false);
 });
 test("unknown issuers and missing or short secrets fail closed", () => {
   assert.throws(() => attestCapabilityEvidence(evidence, { issuer: "user", secret }), /issuer não permitido/);
@@ -30,6 +36,7 @@ test("unknown issuers and missing or short secrets fail closed", () => {
 });
 test("required signed fields cannot be omitted", () => {
   assert.throws(() => attestCapabilityEvidence({ kind: "automated_test" }, { issuer: "automated-test-runner", secret }), /summary é obrigatório/);
+  assert.throws(() => attestCapabilityEvidence({ ...evidence, sourceRevision: "abc123" }, { issuer: "automated-test-runner", secret }), /SHA completo/);
 });
 
 test("environment loader accepts only sufficiently long configured issuer secrets", () => {
