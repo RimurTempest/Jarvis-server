@@ -5,11 +5,13 @@ on:
     branches:
       - main
       - feature/update-safety-foundation
+      - feature/executable-capabilities-foundation
     paths:
       - "server.js"
       - "behavior.js"
       - "package.json"
       - "jarvis-update-safety/**"
+      - "jarvis-capabilities/**"
       - ".github/workflows/update-safety-tests.yml"
   pull_request:
     paths:
@@ -17,6 +19,7 @@ on:
       - "behavior.js"
       - "package.json"
       - "jarvis-update-safety/**"
+      - "jarvis-capabilities/**"
       - ".github/workflows/update-safety-tests.yml"
   workflow_dispatch:
 
@@ -41,6 +44,10 @@ jobs:
           node --check ../behavior.js
           node --check validate-release.mjs
           node --check test/validate-release.test.mjs
+          node --check ../jarvis-capabilities/capability-registry.mjs
+          node --check ../jarvis-capabilities/test/capability-registry.test.mjs
 
       - name: Run automated tests
-        run: node --test test/validate-release.test.mjs
+        run: |
+          node --test test/validate-release.test.mjs
+          node --test ../jarvis-capabilities/test/capability-registry.test.mjs
