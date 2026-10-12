@@ -71,6 +71,7 @@ function cleanEvidenceList(value) {
       reference: cleanText(item.reference, `evidence[${index}].reference`, 2048),
       observedAt: cleanText(item.observedAt, `evidence[${index}].observedAt`, 40),
       scope: cleanText(item.scope, `evidence[${index}].scope`, 500),
+      ...(item.attestation === undefined ? {} : { attestation: item.attestation }),
     };
   });
 }
