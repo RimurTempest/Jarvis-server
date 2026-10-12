@@ -27,6 +27,8 @@ The generic lifecycle is now connected to authenticated Express endpoints and Po
 
 All endpoints require the existing JARVIS bearer token. Requests containing text that resembles credentials or sensitive identifiers are rejected. The API blocks client-submitted final validation to avoid accepting self-asserted test success.
 
+The chat endpoint now recognizes generic learning requests (for example, “aprenda a fazer ...”), creates or reuses a matching capability record, moves new requests into `researching`, and requests web research for the stated goal. Matching validated records are recognized instead of being registered repeatedly. This still records and researches a request; it does not execute the task on Android.
+
 ## Still not implemented
 
 This is a backend lifecycle and persistence foundation, not yet an autonomous learning-and-execution system. It does not yet research a goal automatically, create executable Android integrations, invoke Android actions, or run end-to-end device tests. Those must be built and verified before JARVIS can claim to learn and perform arbitrary new tasks.
