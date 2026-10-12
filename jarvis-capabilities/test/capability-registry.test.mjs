@@ -8,6 +8,7 @@ import {
 import { attestCapabilityEvidence } from "../capability-evidence-attestation.mjs";
 
 const observedAt = "2026-10-12T00:00:00.000Z";
+const SOURCE_REVISION = "c".repeat(40);
 const TRUSTED_ISSUERS = {
   "source-review-runner": "test-source-review-secret-0123456789abcdef",
   "code-review-runner": "test-code-review-secret-0123456789abcdef",
@@ -24,7 +25,10 @@ const ISSUER_BY_KIND = {
 };
 
 function transitionCapability(current, event) {
-  return rawTransitionCapability(current, event, { trustedIssuers: TRUSTED_ISSUERS });
+  const boundEvent = event.state === "testing" && event.sourceRevision === undefined
+    ? { ...event, sourceRevision: SOURCE_REVISION }
+    : event;
+  return rawTransitionCapability(current, boundEvent, { trustedIssuers: TRUSTED_ISSUERS });
 }
 function capabilityCanBeReused(capability) {
   return rawCapabilityCanBeReused(capability, { trustedIssuers: TRUSTED_ISSUERS });
@@ -36,7 +40,9 @@ function evidence(kind, overrides = {}) {
     passed: true,
     reference: `https://example.com/evidence/${kind}`,
     observedAt,
-    scope: "capability generic-task-01; revisão e teste do escopo declarado",
+    scope: `capability generic-task-01; revision ${SOURCE_REVISION}; revisão e teste do escopo declarado`,
+    capabilityId: "generic-task-01",
+    sourceRevision: SOURCE_REVISION,
     ...overrides,
   };
   return attestCapabilityEvidence(raw, {
@@ -122,4 +128,39 @@ test("blocked capability requires a reason and can return to research", () => {
   assert.equal(blocked.state, "blocked");
   assert.equal(capabilityCanBeReused(blocked), false);
   assert.equal(transitionCapability(blocked, { state: "researching" }).state, "researching");
+});
+
+
+test("validation requires a source revision and rejects evidence bound to another capability", () => {
+  const testing = rawTransitionCapability(preparedCapability(), { state: "testing" }, { trustedIssuers: TRUSTED_ISSUERS });
+  assert.throws(() => rawTransitionCapability(testing, {
+    state: "validated",
+    evidence: completeEvidence(),
+  }, { trustedIssuers: TRUSTED_ISSUERS }), /sourceRevision/);
+
+  const correctlyBoundTesting = transitionCapability(preparedCapability(), { state: "testing" });
+  const wrongCapabilityEvidence = completeEvidence().map((item, index) =>
+    index === 0
+      ? attestCapabilityEvidence({ ...item, capabilityId: "another-capability" }, {
+          issuer: "source-review-runner",
+          secret: TRUSTED_ISSUERS["source-review-runner"],
+        })
+      : item
+  );
+  assert.throws(() => transitionCapability(correctlyBoundTesting, {
+    state: "validated",
+    evidence: wrongCapabilityEvidence,
+  }), /capabilityId não corresponde/);
+});
+
+test("evidence from a different revision cannot authorize reuse", () => {
+  const testing = transitionCapability(preparedCapability(), { state: "testing" });
+  const mismatched = completeEvidence().map((item, index) => {
+    if (index !== 0) return item;
+    return attestCapabilityEvidence({ ...item, sourceRevision: "d".repeat(40) }, {
+      issuer: "source-review-runner",
+      secret: TRUSTED_ISSUERS["source-review-runner"],
+    });
+  });
+  assert.throws(() => transitionCapability(testing, { state: "validated", evidence: mismatched }), /sourceRevision não corresponde/);
 });
