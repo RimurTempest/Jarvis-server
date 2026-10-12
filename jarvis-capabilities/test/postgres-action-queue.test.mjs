@@ -94,7 +94,7 @@ test("claims pending actions in a transaction and returns a lease token", async 
   assert.equal(claimed.delivery.deviceId, "android-primary");
   assert.equal(typeof claimed.delivery.leaseToken, "string");
   assert.ok(pool.calls.some((call) => call.sql === "BEGIN"));
-  assert.ok(pool.calls.some((call) => call.sql.includes("FOR UPDATE SKIP LOCKED LIMIT 1")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("LIMIT 1 FOR UPDATE SKIP LOCKED")));
   assert.ok(pool.calls.some((call) => call.sql === "COMMIT"));
 });
 
