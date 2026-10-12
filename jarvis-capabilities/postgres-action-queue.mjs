@@ -95,6 +95,21 @@ export async function claimNextAndroidAction(pool, { deviceId, now = new Date(),
   const tokenHash = hashToken(token);
   try {
     await client.query("BEGIN");
+    // Recover abandoned leases safely: expired actions become terminal; otherwise
+    // the action returns to pending only after its previous lease has expired.
+    await client.query(
+      `UPDATE jarvis_action_queue
+       SET state = 'expired', completed_at = $1, result = $2::jsonb, lease_token_hash = NULL
+       WHERE state = 'delivered' AND expires_at <= $1`,
+      [current, safeJson({ ok: false, message: "A ação expirou durante a entrega." })]
+    );
+    await client.query(
+      `UPDATE jarvis_action_queue
+       SET state = 'pending', delivered_at = NULL, lease_expires_at = NULL,
+           device_id = NULL, lease_token_hash = NULL
+       WHERE state = 'delivered' AND lease_expires_at <= $1 AND expires_at > $1`,
+      [current]
+    );
     const selected = await client.query(
       `SELECT id, capability_id, action, requires_user_confirmation, expires_at, delivery_attempts
        FROM jarvis_action_queue
