@@ -1,9 +1,9 @@
-
 name: JARVIS Update Safety Tests
 
 on:
   push:
     branches:
+      - main
       - feature/update-safety-foundation
     paths:
       - "jarvis-update-safety/**"
