@@ -25,11 +25,7 @@ export function validateRelease(registry, report) {
     };
   }
 
-  if (
-    !report ||
-    typeof report !== 'object' ||
-    Array.isArray(report)
-  ) {
+  if (!report || typeof report !== 'object' || Array.isArray(report)) {
     return {
       ok: false,
       errors: ['Relatório de regressão ausente ou inválido.'],
@@ -65,13 +61,7 @@ export function validateRelease(registry, report) {
 
   if (!Array.isArray(report.results)) {
     invalid('results precisa ser uma lista.');
-
-    return {
-      ok: false,
-      errors,
-      checked: 0,
-      installAllowed: false
-    };
+    return { ok: false, errors, checked: 0, installAllowed: false };
   }
 
   const requiredById = new Map();
@@ -162,9 +152,7 @@ export function validateRelease(registry, report) {
   }
 
   if (report.rollbackPrepared !== true) {
-    invalid(
-      'Bloqueado: backup/rollback da versão estável não foi confirmado.'
-    );
+    invalid('Bloqueado: backup/rollback da versão estável não foi confirmado.');
   }
 
   if (report.databaseRecoveryVerified !== true) {
@@ -203,7 +191,6 @@ function main() {
 
   const getArg = (name, fallback) => {
     const index = args.indexOf(name);
-
     return index >= 0 && args[index + 1]
       ? args[index + 1]
       : fallback;
@@ -240,7 +227,6 @@ function main() {
   }
 
   const result = validateRelease(registry, report);
-
   console.log(JSON.stringify(result, null, 2));
 
   if (!result.ok) {
