@@ -29,6 +29,10 @@ All endpoints require the existing JARVIS bearer token. Requests containing text
 
 The chat endpoint now recognizes generic learning requests (for example, “aprenda a fazer ...”), creates or reuses a matching capability record, moves new requests into `researching`, and requests web research for the stated goal. Matching validated records are recognized instead of being registered repeatedly. This still records and researches a request; it does not execute the task on Android.
 
+## Android action protocol foundation
+
+`android-action-protocol.mjs` defines a strict, structured allowlist for basic Android action envelopes (`open_app`, `open_url`, `dial_number`, selected settings screens, and `copy_text`). It rejects arbitrary shell/code/intent payloads, restricts URLs to HTTP(S), gives action requests short expirations, and marks phone dialing as requiring explicit user confirmation. The module currently validates protocol data only; no action queue, device polling endpoint, or Android dispatcher is wired yet. The client cannot make a capability reusable by merely reporting success.
+
 ## Still not implemented
 
 This is a backend lifecycle and persistence foundation, not yet an autonomous learning-and-execution system. It does not yet research a goal automatically, create executable Android integrations, invoke Android actions, or run end-to-end device tests. Those must be built and verified before JARVIS can claim to learn and perform arbitrary new tasks.
