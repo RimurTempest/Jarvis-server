@@ -5,17 +5,6 @@ function sendError(res, status, message) {
   return res.status(status).json({ error: message });
 }
 
-function deviceAuth(req, res, next) {
-  const result = validateAndroidDeviceCredentials({
-    authorization: req.headers?.authorization,
-    deviceIdHeader: req.headers?.["x-jarvis-device-id"],
-    expectedToken: process.env.JARVIS_ANDROID_DEVICE_TOKEN,
-    expectedDeviceId: process.env.JARVIS_ANDROID_DEVICE_ID,
-  });
-  if (!result.ok) return sendError(res, 401, "Dispositivo Android não autorizado.");
-  return next();
-}
-
 /**
  * Register the Android delivery endpoints on an existing Express app.
  * The dedicated device token is independent from JARVIS_API_TOKEN and must
