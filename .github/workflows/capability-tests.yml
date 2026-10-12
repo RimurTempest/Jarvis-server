@@ -1,0 +1,42 @@
+name: JARVIS Capability Tests
+
+on:
+  push:
+    branches:
+      - feature/executable-capabilities-foundation
+    paths:
+      - "jarvis-capabilities/**"
+      - ".github/workflows/capability-tests.yml"
+  pull_request:
+    paths:
+      - "jarvis-capabilities/**"
+      - ".github/workflows/capability-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  capability-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check capability module syntax
+        run: |
+          node --check jarvis-capabilities/capability-registry.mjs
+          node --check jarvis-capabilities/learning-intent.mjs
+          node --check jarvis-capabilities/android-action-protocol.mjs
+          node --check jarvis-capabilities/action-delivery.mjs
+          node --check jarvis-capabilities/postgres-action-queue.mjs
+          node --check jarvis-capabilities/test/capability-registry.test.mjs
+          node --check jarvis-capabilities/test/learning-intent.test.mjs
+          node --check jarvis-capabilities/test/android-action-protocol.test.mjs
+          node --check jarvis-capabilities/test/action-delivery.test.mjs
+      - name: Run capability tests
+        run: |
+          node --test jarvis-capabilities/test/capability-registry.test.mjs
+          node --test jarvis-capabilities/test/learning-intent.test.mjs
+          node --test jarvis-capabilities/test/android-action-protocol.test.mjs
+          node --test jarvis-capabilities/test/action-delivery.test.mjs
