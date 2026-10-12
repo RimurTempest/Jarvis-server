@@ -7,6 +7,8 @@ const SIGNED_FIELDS = Object.freeze([
   "reference",
   "observedAt",
   "scope",
+  "capabilityId",
+  "sourceRevision",
 ]);
 
 const ALLOWED_ISSUERS = new Set([
@@ -19,6 +21,17 @@ const ALLOWED_ISSUERS = new Set([
 
 function validSecret(secret) {
   return typeof secret === "string" && Buffer.byteLength(secret, "utf8") >= 32;
+}
+
+function validCapabilityId(value) {
+  return typeof value === "string" &&
+    value.length >= 1 &&
+    value.length <= 100 &&
+    /^[a-z0-9][a-z0-9._:-]*$/i.test(value);
+}
+
+function validSourceRevision(value) {
+  return typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(value);
 }
 
 function canonicalEvidence(evidence) {
@@ -58,9 +71,9 @@ export function loadTrustedCapabilityEvidenceIssuers(env = process.env) {
 }
 
 /**
- * Sign evidence in a trusted runner only. The secret must never be sent by a
- * client or stored in evidence records. A signature authenticates the issuer's
- * assertion; it does not independently prove the assertion is factually true.
+ * Sign evidence in a trusted runner only. Evidence is bound to one capability
+ * ID and one full source commit SHA to prevent cross-capability/revision replay.
+ * The secret must never be sent by a client or stored in evidence records.
  */
 export function attestCapabilityEvidence(evidence, { issuer, secret } = {}) {
   if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
@@ -72,6 +85,12 @@ export function attestCapabilityEvidence(evidence, { issuer, secret } = {}) {
     if (!Object.prototype.hasOwnProperty.call(evidence, field)) {
       throw new TypeError(`evidence.${field} é obrigatório.`);
     }
+  }
+  if (!validCapabilityId(evidence.capabilityId)) {
+    throw new TypeError("evidence.capabilityId inválido.");
+  }
+  if (!validSourceRevision(evidence.sourceRevision)) {
+    throw new TypeError("evidence.sourceRevision deve ser um SHA completo de 40 ou 64 caracteres hexadecimais.");
   }
   return {
     ...evidence,
@@ -85,10 +104,12 @@ export function attestCapabilityEvidence(evidence, { issuer, secret } = {}) {
 
 /**
  * trustedIssuers maps trusted issuer names to secrets kept on the trusted
- * server/runner. Missing configuration, unknown issuers and tampering fail closed.
+ * server/runner. Missing configuration, unknown issuers, malformed binding,
+ * and tampering all fail closed.
  */
 export function verifyCapabilityEvidenceAttestation(evidence, trustedIssuers = {}) {
   if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return false;
+  if (!validCapabilityId(evidence.capabilityId) || !validSourceRevision(evidence.sourceRevision)) return false;
   const attestation = evidence.attestation;
   if (
     !attestation ||
