@@ -48,6 +48,13 @@ function cleanId(value) {
   return id;
 }
 
+function cleanSourceRevision(value) {
+  if (typeof value !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(value)) {
+    throw new TypeError("sourceRevision deve ser um SHA completo de 40 ou 64 caracteres hexadecimais.");
+  }
+  return value;
+}
+
 function cleanEvidenceList(value) {
   if (!Array.isArray(value)) {
     throw new TypeError("evidence deve ser uma lista.");
@@ -71,6 +78,8 @@ function cleanEvidenceList(value) {
       reference: cleanText(item.reference, `evidence[${index}].reference`, 2048),
       observedAt: cleanText(item.observedAt, `evidence[${index}].observedAt`, 40),
       scope: cleanText(item.scope, `evidence[${index}].scope`, 500),
+      capabilityId: cleanId(item.capabilityId),
+      sourceRevision: cleanSourceRevision(item.sourceRevision),
       ...(item.attestation === undefined ? {} : { attestation: item.attestation }),
     };
   });
@@ -106,6 +115,7 @@ export function createCapabilityRequest({
     research: null,
     requirements: [],
     executionPlan: null,
+    sourceRevision: null,
     evidence: [],
     validationProfile: cleanValidationProfile(validationProfile),
     validation: null,
@@ -147,13 +157,21 @@ export function transitionCapability(current, event, { trustedIssuers = {} } = {
     );
   }
   if (event.executionPlan !== undefined) next.executionPlan = cleanText(event.executionPlan, "executionPlan");
+  if (event.sourceRevision !== undefined) next.sourceRevision = cleanSourceRevision(event.sourceRevision);
   if (event.evidence !== undefined) next.evidence = cleanEvidenceList(event.evidence);
 
   if (nextState === "validated") {
     if (!next.executionPlan) {
       throw new Error("A capacidade não pode ser validada sem um plano de execução.");
     }
-    const assessment = evaluateCapabilityEvidence(next.evidence, next.validationProfile, { trustedIssuers });
+    if (!next.sourceRevision) {
+      throw new Error("A capacidade não pode ser validada sem a revisão completa do código (sourceRevision).");
+    }
+    const assessment = evaluateCapabilityEvidence(next.evidence, next.validationProfile, {
+      trustedIssuers,
+      capabilityId: next.id,
+      sourceRevision: next.sourceRevision,
+    });
     if (!assessment.ok) {
       const details = [
         assessment.missing.length ? `faltam: ${assessment.missing.join(", ")}` : "",
@@ -166,7 +184,8 @@ export function transitionCapability(current, event, { trustedIssuers = {} } = {
       evidenceCount: next.evidence.length,
       requiredEvidence: assessment.required,
       validatedAt: new Date().toISOString(),
-      provenance: "metadata_checked_not_independently_authenticated",
+      provenance: "signed_issuer_assertions_not_independently_truth_verified",
+      sourceRevision: next.sourceRevision,
     };
   } else if (nextState === "blocked") {
     next.validation = {
@@ -193,5 +212,9 @@ export function capabilityCanBeReused(capability, { trustedIssuers = {} } = {}) 
     capability.evidence.every((item) => item.passed === true)
   )) return false;
 
-  return evaluateCapabilityEvidence(capability.evidence, capability.validationProfile, { trustedIssuers }).ok;
+  return evaluateCapabilityEvidence(capability.evidence, capability.validationProfile, {
+    trustedIssuers,
+    capabilityId: capability.id,
+    sourceRevision: capability.sourceRevision,
+  }).ok;
 }
