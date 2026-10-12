@@ -19,7 +19,7 @@ Any stage may be blocked when a requirement, permission, safe execution path, or
 
 ## API and persistence status
 
-The generic lifecycle is now connected to authenticated Express endpoints and PostgreSQL persistence:
+The generic lifecycle is connected to authenticated Express endpoints and PostgreSQL persistence:
 
 - `POST /api/capabilities` creates a generic learning request using `{ "goal": "..." }`.
 - `GET /api/capabilities` lists stored capabilities; optional `?state=...` filters by lifecycle state.
@@ -27,11 +27,13 @@ The generic lifecycle is now connected to authenticated Express endpoints and Po
 
 All endpoints require the existing JARVIS bearer token. Requests containing text that resembles credentials or sensitive identifiers are rejected. The API blocks client-submitted final validation to avoid accepting self-asserted test success.
 
-The chat endpoint now recognizes generic learning requests (for example, “aprenda a fazer ...”), creates or reuses a matching capability record, moves new requests into `researching`, and requests web research for the stated goal. Matching validated records are recognized instead of being registered repeatedly. This still records and researches a request; it does not execute the task on Android.
+The chat endpoint recognizes generic learning requests (for example, “aprenda a fazer ...”), creates or reuses a matching capability record, moves new requests into `researching`, and requests web research for the stated goal. Matching validated records are recognized instead of being registered repeatedly. This still records and researches a request; it does not execute the task on Android.
 
 ## Android action protocol foundation
 
-`android-action-protocol.mjs` defines a strict, structured allowlist for basic Android action envelopes (`open_app`, `open_url`, `dial_number`, selected settings screens, and `copy_text`). It rejects arbitrary shell/code/intent payloads, restricts URLs to HTTP(S), gives action requests short expirations, and marks phone dialing as requiring explicit user confirmation. The module currently validates protocol data only; no action queue, device polling endpoint, or Android dispatcher is wired yet. The client cannot make a capability reusable by merely reporting success.
+`android-action-protocol.mjs` defines a strict, structured allowlist for basic Android action envelopes (`open_app`, `open_url`, `dial_number`, selected settings screens, and `copy_text`). It rejects arbitrary shell/code/intent payloads, restricts URLs to HTTP(S), gives action requests short expirations, and marks phone dialing as requiring explicit user confirmation. The module validates protocol data only; no action queue, device polling endpoint, or Android dispatcher is wired yet.
+
+`action-delivery.mjs` adds a pure delivery policy for a future server-owned queue. It binds each delivery lease to a device ID and one-time lease token, limits the lease to 60 seconds, prevents claiming an already-delivered action, checks that results come from the same device/session, preserves device-confirmation requirements, and permits redelivery only after a lease expires while the action itself remains valid. It is not a database queue and is not connected to an endpoint or Android client yet.
 
 ## Still not implemented
 
