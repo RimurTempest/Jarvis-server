@@ -115,7 +115,7 @@ export async function claimNextAndroidAction(pool, { deviceId, now = new Date(),
        FROM jarvis_action_queue
        WHERE state = 'pending' AND expires_at > $1
        ORDER BY created_at ASC, id ASC
-       FOR UPDATE SKIP LOCKED LIMIT 1`,
+       LIMIT 1 FOR UPDATE SKIP LOCKED`,
       [current]
     );
     if (!selected.rowCount) {
