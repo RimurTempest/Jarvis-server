@@ -27,7 +27,7 @@ test("standard policy requires research review, code review and automated tests"
     evidence("source_review"),
     evidence("code_review"),
     evidence("automated_test"),
-  ]).ok, true);
+  ]), { trustedIssuers: TRUSTED_ISSUERS }).ok, true);
 });
 
 test("elevated and high risk profiles require security review", () => {
@@ -36,7 +36,7 @@ test("elevated and high risk profiles require security review", () => {
       evidence("source_review"),
       evidence("code_review"),
       evidence("automated_test"),
-    ], { riskLevel });
+    ], { riskLevel }, { trustedIssuers: TRUSTED_ISSUERS });
     assert.equal(result.ok, false);
     assert.deepEqual(result.missing, ["security_review"]);
   }
@@ -47,7 +47,7 @@ test("device test is mandatory when the capability depends on real device execut
     evidence("source_review"),
     evidence("code_review"),
     evidence("automated_test"),
-  ], { requiresDeviceTest: true });
+  ], { requiresDeviceTest: true }, { trustedIssuers: TRUSTED_ISSUERS });
   assert.deepEqual(result.missing, ["device_test"]);
 });
 
@@ -68,8 +68,8 @@ test("unknown evidence types and invalid profiles fail closed", () => {
     evidence("code_review"),
     evidence("automated_test"),
     evidence("user_says_it_worked"),
-  ]).ok, false);
-  assert.equal(evaluateCapabilityEvidence([], { riskLevel: "unknown" }).ok, false);
+  ], {}, { trustedIssuers: TRUSTED_ISSUERS }).ok, false);
+  assert.equal(evaluateCapabilityEvidence([], { riskLevel: "unknown" }, { trustedIssuers: TRUSTED_ISSUERS }).ok, false);
   assert.throws(() => requiredCapabilityEvidence({ requiresDeviceTest: "yes" }), /booleano/);
 });
 
