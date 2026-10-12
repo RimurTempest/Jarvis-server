@@ -33,6 +33,7 @@ jobs:
           node --check jarvis-capabilities/android-device-auth.mjs
           node --check jarvis-capabilities/action-delivery.mjs
           node --check jarvis-capabilities/postgres-action-queue.mjs
+          node --check jarvis-capabilities/android-action-routes.mjs
           node --check jarvis-capabilities/test/capability-registry.test.mjs
           node --check jarvis-capabilities/test/capability-validation-policy.test.mjs
           node --check jarvis-capabilities/test/capability-evidence-attestation.test.mjs
@@ -41,6 +42,7 @@ jobs:
           node --check jarvis-capabilities/test/android-device-auth.test.mjs
           node --check jarvis-capabilities/test/action-delivery.test.mjs
           node --check jarvis-capabilities/test/postgres-action-queue.test.mjs
+          node --check jarvis-capabilities/test/android-action-routes.test.mjs
       - name: Run capability tests
         run: |
           node --test jarvis-capabilities/test/capability-registry.test.mjs
@@ -51,3 +53,4 @@ jobs:
           node --test jarvis-capabilities/test/android-device-auth.test.mjs
           node --test jarvis-capabilities/test/action-delivery.test.mjs
           node --test jarvis-capabilities/test/postgres-action-queue.test.mjs
+          node --test jarvis-capabilities/test/android-action-routes.test.mjs
