@@ -98,7 +98,8 @@ export function evaluateCapabilityEvidence(evidence, profile = {}, { trustedIssu
     }
     if (!verifyCapabilityEvidenceAttestation(item, trustedIssuers)) {
       invalid.push(`${prefix}.attestation não é válida para um emissor confiável.`);
-    }\n    if (item.passed === true && ALLOWED_EVIDENCE_KINDS.has(item.kind)) passedKinds.add(item.kind);
+    }
+    if (item.passed === true && ALLOWED_EVIDENCE_KINDS.has(item.kind)) passedKinds.add(item.kind);
   });
 
   const missing = required.filter((kind) => !passedKinds.has(kind));
