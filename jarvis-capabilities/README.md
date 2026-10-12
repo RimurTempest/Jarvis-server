@@ -12,7 +12,9 @@ Any stage may be blocked when a requirement, permission, safe execution path, or
 
 - Research and preparation do not count as successful learning.
 - A capability is reusable only when it has a concrete execution plan and explicit passing test evidence.
-- Evidence entries must have a type, a summary, and a boolean pass/fail result.
+- Validation evidence must include a type, summary, pass/fail result, HTTPS reference, canonical ISO timestamp, scope, capability ID, and full source revision SHA.
+- Evidence is authenticated with HMAC-SHA-256 attestation format v2. The signature binds the capability ID and source revision, and the policy rejects mismatched evidence or missing trusted issuer keys.
+- The signature authenticates an issuer assertion; it does not independently prove that a review or test truly occurred. Trusted evidence producers are not yet connected.
 - Research text and plans are data, not executable code.
 - The authenticated API refuses direct transition to `validated`; final validation must be performed by a trusted test executor.
 - The module does not itself invoke Android actions, install applications, or claim that a real-world action succeeded.
@@ -23,7 +25,7 @@ The generic lifecycle is connected to authenticated Express endpoints and Postgr
 
 - `POST /api/capabilities` creates a generic learning request using `{ "goal": "..." }`.
 - `GET /api/capabilities` lists stored capabilities; optional `?state=...` filters by lifecycle state.
-- `PATCH /api/capabilities/:id` advances an existing capability through permitted states and records research, requirements, a plan, or test evidence.
+- `PATCH /api/capabilities/:id` advances an existing capability through permitted states and records research, requirements, a plan, the source revision under test, or evidence metadata. The API accepts the revision as metadata but never accepts client-submitted final validation.
 
 All endpoints require the existing JARVIS bearer token. Requests containing text that resembles credentials or sensitive identifiers are rejected. The API blocks client-submitted final validation to avoid accepting self-asserted test success.
 
@@ -37,4 +39,4 @@ The chat endpoint recognizes generic learning requests (for example, “aprenda 
 
 ## Still not implemented
 
-This is a backend lifecycle and persistence foundation, not yet an autonomous learning-and-execution system. It does not yet connect the queue repository to `server.js`, authenticate Android devices independently, expose polling/result routes, create executable Android integrations, invoke Android actions, or run end-to-end device tests. Those must be built and verified before JARVIS can claim to learn and perform arbitrary new tasks.
+This is a backend lifecycle and persistence foundation, not yet an autonomous learning-and-execution system. It does not yet connect the queue repository to `server.js`, authenticate Android devices independently through HTTP routes, expose polling/result routes, connect a trusted CI/device evidence producer, create executable Android integrations, invoke Android actions, or run end-to-end device tests. Unit tests validate module logic only; they do not prove live PostgreSQL, server, or Android integration. Those must be built and verified before JARVIS can claim to learn and perform arbitrary new tasks.
