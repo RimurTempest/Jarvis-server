@@ -19,7 +19,9 @@ const evidence = {
 
 test("trusted issuer can sign and verify evidence", () => {
   const signed = attestCapabilityEvidence(evidence, { issuer: "automated-test-runner", secret });
+  assert.equal(signed.attestation.version, 2);
   assert.equal(verifyCapabilityEvidenceAttestation(signed, trustedIssuers), true);
+  assert.equal(verifyCapabilityEvidenceAttestation({ ...signed, attestation: { ...signed.attestation, version: 1 } }, trustedIssuers), false);
 });
 test("tampering with a signed field invalidates the attestation", () => {
   const signed = attestCapabilityEvidence(evidence, { issuer: "automated-test-runner", secret });
