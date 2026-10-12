@@ -96,7 +96,9 @@ export function evaluateCapabilityEvidence(evidence, profile = {}, { trustedIssu
     if (!nonEmpty(item.scope) || item.scope.trim().length > 500) {
       invalid.push(`${prefix}.scope inválido.`);
     }
-    if (!verifyCapabilityEvidenceAttestation(item, trustedIssuers)) {\n      invalid.push(`${prefix}.attestation não é válida para um emissor confiável.`);\n    }\n    if (item.passed === true && ALLOWED_EVIDENCE_KINDS.has(item.kind)) passedKinds.add(item.kind);
+    if (!verifyCapabilityEvidenceAttestation(item, trustedIssuers)) {
+      invalid.push(`${prefix}.attestation não é válida para um emissor confiável.`);
+    }\n    if (item.passed === true && ALLOWED_EVIDENCE_KINDS.has(item.kind)) passedKinds.add(item.kind);
   });
 
   const missing = required.filter((kind) => !passedKinds.has(kind));
