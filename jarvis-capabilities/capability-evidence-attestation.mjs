@@ -36,6 +36,27 @@ function signatureFor(evidence, issuer, secret) {
     .digest("base64url");
 }
 
+const ISSUER_ENV_VARS = Object.freeze({
+  "source-review-runner": "JARVIS_EVIDENCE_KEY_SOURCE_REVIEW",
+  "code-review-runner": "JARVIS_EVIDENCE_KEY_CODE_REVIEW",
+  "automated-test-runner": "JARVIS_EVIDENCE_KEY_AUTOMATED_TEST",
+  "security-review-runner": "JARVIS_EVIDENCE_KEY_SECURITY_REVIEW",
+  "android-device-test-runner": "JARVIS_EVIDENCE_KEY_DEVICE_TEST",
+});
+
+/**
+ * Load issuer secrets from server/runner environment without logging them.
+ * Missing or short secrets are omitted; verification then fails closed.
+ */
+export function loadTrustedCapabilityEvidenceIssuers(env = process.env) {
+  const trusted = Object.create(null);
+  for (const [issuer, variable] of Object.entries(ISSUER_ENV_VARS)) {
+    const secret = env?.[variable];
+    if (validSecret(secret)) trusted[issuer] = secret;
+  }
+  return trusted;
+}
+
 /**
  * Sign evidence in a trusted runner only. The secret must never be sent by a
  * client or stored in evidence records. A signature authenticates the issuer's
