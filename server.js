@@ -3,6 +3,8 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
+import { randomUUID } from "node:crypto";
+import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -299,6 +301,15 @@ async function initializeDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_learning_events_created ON jarvis_learning_events (created_at DESC, id DESC)`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS jarvis_capabilities (
+      id TEXT PRIMARY KEY,
+      goal TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('requested', 'researching', 'prepared', 'testing', 'validated', 'blocked')),
+      record JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_capabilities_state_updated ON jarvis_capabilities (state, updated_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_learning_events_type ON jarvis_learning_events (event_type, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_messages_created ON jarvis_messages (created_at DESC, id DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_memories_updated ON jarvis_memories (updated_at DESC, id DESC)`);
@@ -670,6 +681,62 @@ app.get("/health", async (_req, res) => {
   });
 });
 
+app.get("/api/capabilities", requireAuth, async (req, res) => {
+  try {
+    await initializeDatabase();
+    const state = typeof req.query.state === "string" ? req.query.state : null;
+    if (state && !CAPABILITY_STATES.includes(state)) return res.status(400).json({ error: "Estado de capacidade inválido." });
+    const result = await pool.query("SELECT record FROM jarvis_capabilities WHERE ($1::text IS NULL OR state = $1) ORDER BY updated_at DESC LIMIT 100", [state]);
+    return res.json({ capabilities: result.rows.map((row) => ({ ...row.record, reusable: capabilityCanBeReused(row.record) })) });
+  } catch (error) {
+    console.error("Falha ao listar capacidades:", error.message);
+    return res.status(503).json({ error: "Não foi possível consultar as capacidades." });
+  }
+});
+
+app.post("/api/capabilities", requireAuth, async (req, res) => {
+  const goal = typeof req.body?.goal === "string" ? req.body.goal.trim() : "";
+  if (!goal) return res.status(400).json({ error: "Informe a tarefa que deve ser aprendida em goal." });
+  if (goal.length > 4000) return res.status(413).json({ error: "A descrição da tarefa excede 4000 caracteres." });
+  if (looksSensitive(goal)) return res.status(400).json({ error: "A descrição parece conter credenciais ou dados sensíveis." });
+  try {
+    await initializeDatabase();
+    const id = randomUUID();
+    const capability = createCapabilityRequest({ id, goal, requestedBy: "authenticated_user" });
+    await pool.query("INSERT INTO jarvis_capabilities (id, goal, state, record) VALUES ($1, $2, $3, $4::jsonb)", [id, capability.goal, capability.state, JSON.stringify(capability)]);
+    await recordLearningEvent("capability_requested", goal, { capabilityId: id, state: capability.state });
+    return res.status(201).json({ capability, reusable: false });
+  } catch (error) {
+    console.error("Falha ao criar capacidade:", error.message);
+    return res.status(500).json({ error: "Não foi possível registrar a capacidade." });
+  }
+});
+
+app.patch("/api/capabilities/:id", requireAuth, async (req, res) => {
+  const id = typeof req.params.id === "string" ? req.params.id : "";
+  const requestedState = typeof req.body?.state === "string" ? req.body.state : "";
+  if (!id || id.length > 100) return res.status(400).json({ error: "ID de capacidade inválido." });
+  if (!CAPABILITY_STATES.includes(requestedState)) return res.status(400).json({ error: "Estado de capacidade inválido." });
+  // A API não aceita autoaprovação; validação final exigirá evidências de um executor confiável.
+  if (requestedState === "validated") return res.status(403).json({ error: "A validação final exige evidências produzidas por um executor de testes confiável." });
+  try {
+    await initializeDatabase();
+    const selected = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [id]);
+    if (!selected.rowCount) return res.status(404).json({ error: "Capacidade não encontrada." });
+    const current = selected.rows[0].record;
+    const fields = ["state", "research", "requirements", "executionPlan", "evidence", "reason"];
+    const event = {};
+    for (const field of fields) if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) event[field] = req.body[field];
+    const next = transitionCapability(current, event);
+    await pool.query("UPDATE jarvis_capabilities SET goal = $1, state = $2, record = $3::jsonb, updated_at = NOW() WHERE id = $4", [next.goal, next.state, JSON.stringify(next), id]);
+    await recordLearningEvent("capability_state_changed", next.goal, { capabilityId: id, previousState: current.state, state: next.state });
+    return res.json({ capability: next, reusable: capabilityCanBeReused(next) });
+  } catch (error) {
+    if (error instanceof TypeError || error instanceof RangeError || /Transição não permitida|reason|evidências/i.test(error.message)) return res.status(400).json({ error: error.message });
+    console.error("Falha ao atualizar capacidade:", error.message);
+    return res.status(500).json({ error: "Não foi possível atualizar a capacidade." });
+  }
+});
 app.get("/api/learning", requireAuth, async (_req, res) => {
   try {
     await initializeDatabase();
