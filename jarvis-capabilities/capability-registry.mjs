@@ -118,7 +118,7 @@ export function createCapabilityRequest({
  * review and automated tests; riskier profiles require security review, and
  * device-dependent claims require an actual device-test evidence record.
  */
-export function transitionCapability(current, event) {
+export function transitionCapability(current, event, { trustedIssuers = {} } = {}) {
   if (!current || typeof current !== "object" || !CAPABILITY_STATES.includes(current.state)) {
     throw new TypeError("Registro de capacidade inválido.");
   }
@@ -152,7 +152,7 @@ export function transitionCapability(current, event) {
     if (!next.executionPlan) {
       throw new Error("A capacidade não pode ser validada sem um plano de execução.");
     }
-    const assessment = evaluateCapabilityEvidence(next.evidence, next.validationProfile);
+    const assessment = evaluateCapabilityEvidence(next.evidence, next.validationProfile, { trustedIssuers });
     if (!assessment.ok) {
       const details = [
         assessment.missing.length ? `faltam: ${assessment.missing.join(", ")}` : "",
@@ -181,7 +181,7 @@ export function transitionCapability(current, event) {
   return next;
 }
 
-export function capabilityCanBeReused(capability) {
+export function capabilityCanBeReused(capability, { trustedIssuers = {} } = {}) {
   if (!(
     capability &&
     capability.state === "validated" &&
@@ -192,5 +192,5 @@ export function capabilityCanBeReused(capability) {
     capability.evidence.every((item) => item.passed === true)
   )) return false;
 
-  return evaluateCapabilityEvidence(capability.evidence, capability.validationProfile).ok;
+  return evaluateCapabilityEvidence(capability.evidence, capability.validationProfile, { trustedIssuers }).ok;
 }
