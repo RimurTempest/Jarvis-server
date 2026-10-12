@@ -4,6 +4,8 @@ import { evaluateCapabilityEvidence, requiredCapabilityEvidence } from "../capab
 import { attestCapabilityEvidence } from "../capability-evidence-attestation.mjs";
 
 const observedAt = "2026-10-12T00:00:00.000Z";
+const capabilityId = "policy-task-01";
+const sourceRevision = "b".repeat(40);
 const TRUSTED_ISSUERS = {
   "source-review-runner": "test-source-review-secret-0123456789abcdef",
   "code-review-runner": "test-code-review-secret-0123456789abcdef",
@@ -22,11 +24,11 @@ function evidence(kind, overrides = {}) {
   const raw = {
     kind, summary: `Verificação de ${kind}`, passed: true,
     reference: `https://example.com/evidence/${kind}`, observedAt,
-    scope: "escopo genérico de capacidade", ...overrides,
+    scope: "escopo genérico de capacidade", capabilityId, sourceRevision, ...overrides,
   };
   return attestCapabilityEvidence(raw, { issuer: ISSUER_BY_KIND[kind], secret: TRUSTED_ISSUERS[ISSUER_BY_KIND[kind]] });
 }
-const options = { trustedIssuers: TRUSTED_ISSUERS };
+const options = { trustedIssuers: TRUSTED_ISSUERS, capabilityId, sourceRevision };
 
 test("standard policy requires signed source review, code review and automated tests", () => {
   assert.deepEqual(requiredCapabilityEvidence(), ["source_review", "code_review", "automated_test"]);
@@ -73,4 +75,29 @@ test("attestation tampering is detected", () => {
   const result = evaluateCapabilityEvidence([altered, evidence("code_review"), evidence("automated_test")], {}, options);
   assert.equal(result.ok, false);
   assert.ok(result.invalid.some((entry) => entry.includes("attestation")));
+});
+
+
+test("evidence cannot be replayed for another capability or source revision", () => {
+  const source = evidence("source_review");
+  const otherCapability = evaluateCapabilityEvidence(
+    [{ ...source, capabilityId: "other-capability" }, evidence("code_review"), evidence("automated_test")],
+    {},
+    options,
+  );
+  assert.equal(otherCapability.ok, false);
+  assert.ok(otherCapability.invalid.some((entry) => entry.includes("capabilityId")));
+  const otherRevision = evaluateCapabilityEvidence(
+    [{ ...source, sourceRevision: "c".repeat(40) }, evidence("code_review"), evidence("automated_test")],
+    {},
+    options,
+  );
+  assert.equal(otherRevision.ok, false);
+  assert.ok(otherRevision.invalid.some((entry) => entry.includes("sourceRevision")));
+});
+
+test("validation fails closed when expected capability or revision is absent", () => {
+  const records = [evidence("source_review"), evidence("code_review"), evidence("automated_test")];
+  assert.equal(evaluateCapabilityEvidence(records, {}, { trustedIssuers: TRUSTED_ISSUERS }).ok, false);
+  assert.equal(evaluateCapabilityEvidence(records, {}, { ...options, sourceRevision: "short" }).ok, false);
 });
