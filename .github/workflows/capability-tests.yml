@@ -34,9 +34,11 @@ jobs:
           node --check jarvis-capabilities/test/learning-intent.test.mjs
           node --check jarvis-capabilities/test/android-action-protocol.test.mjs
           node --check jarvis-capabilities/test/action-delivery.test.mjs
+          node --check jarvis-capabilities/test/postgres-action-queue.test.mjs
       - name: Run capability tests
         run: |
           node --test jarvis-capabilities/test/capability-registry.test.mjs
           node --test jarvis-capabilities/test/learning-intent.test.mjs
           node --test jarvis-capabilities/test/android-action-protocol.test.mjs
           node --test jarvis-capabilities/test/action-delivery.test.mjs
+          node --test jarvis-capabilities/test/postgres-action-queue.test.mjs
