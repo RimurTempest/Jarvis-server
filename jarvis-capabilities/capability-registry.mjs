@@ -2,9 +2,11 @@
  * JARVIS generic capability lifecycle.
  *
  * This module records capability state; it does not claim to execute Android
- * actions. A capability becomes reusable only after independent test evidence
- * is recorded. Discovery text is treated as untrusted data, never as code.
+ * actions. Validation requires structured evidence and the generic policy.
+ * Evidence metadata alone does not establish provenance; trusted executors must
+ * authenticate evidence before they can authorize final validation.
  */
+import { evaluateCapabilityEvidence } from "./capability-validation-policy.mjs";
 
 export const CAPABILITY_STATES = Object.freeze([
   "requested",
@@ -59,15 +61,41 @@ function cleanEvidenceList(value) {
     }
     const kind = cleanText(item.kind, `evidence[${index}].kind`, 40);
     const summary = cleanText(item.summary, `evidence[${index}].summary`, 1000);
-    const passed = item.passed;
-    if (typeof passed !== "boolean") {
+    if (typeof item.passed !== "boolean") {
       throw new TypeError(`evidence[${index}].passed deve ser booleano.`);
     }
-    return { kind, summary, passed };
+    return {
+      kind,
+      summary,
+      passed: item.passed,
+      reference: cleanText(item.reference, `evidence[${index}].reference`, 2048),
+      observedAt: cleanText(item.observedAt, `evidence[${index}].observedAt`, 40),
+      scope: cleanText(item.scope, `evidence[${index}].scope`, 500),
+    };
   });
 }
 
-export function createCapabilityRequest({ id, goal, requestedBy = "user" }) {
+function cleanValidationProfile(profile = {}) {
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+    throw new TypeError("validationProfile deve ser um objeto.");
+  }
+  const riskLevel = profile.riskLevel ?? "standard";
+  const requiresDeviceTest = profile.requiresDeviceTest ?? false;
+  if (!["standard", "elevated", "high"].includes(riskLevel)) {
+    throw new TypeError("validationProfile.riskLevel inválido.");
+  }
+  if (typeof requiresDeviceTest !== "boolean") {
+    throw new TypeError("validationProfile.requiresDeviceTest deve ser booleano.");
+  }
+  return { riskLevel, requiresDeviceTest };
+}
+
+export function createCapabilityRequest({
+  id,
+  goal,
+  requestedBy = "user",
+  validationProfile = {},
+}) {
   const now = new Date().toISOString();
   return {
     id: cleanId(id),
@@ -78,6 +106,7 @@ export function createCapabilityRequest({ id, goal, requestedBy = "user" }) {
     requirements: [],
     executionPlan: null,
     evidence: [],
+    validationProfile: cleanValidationProfile(validationProfile),
     validation: null,
     createdAt: now,
     updatedAt: now,
@@ -85,8 +114,9 @@ export function createCapabilityRequest({ id, goal, requestedBy = "user" }) {
 }
 
 /**
- * Apply a lifecycle event immutably. Only explicit test evidence can validate
- * a capability; research or a prepared plan alone never does.
+ * Apply a lifecycle event immutably. Validation requires source review, code
+ * review and automated tests; riskier profiles require security review, and
+ * device-dependent claims require an actual device-test evidence record.
  */
 export function transitionCapability(current, event) {
   if (!current || typeof current !== "object" || !CAPABILITY_STATES.includes(current.state)) {
@@ -106,9 +136,7 @@ export function transitionCapability(current, event) {
 
   const next = { ...current, updatedAt: new Date().toISOString() };
 
-  if (event.research !== undefined) {
-    next.research = cleanText(event.research, "research");
-  }
+  if (event.research !== undefined) next.research = cleanText(event.research, "research");
   if (event.requirements !== undefined) {
     if (!Array.isArray(event.requirements) || event.requirements.length > 50) {
       throw new TypeError("requirements deve ser uma lista de até 50 itens.");
@@ -117,24 +145,27 @@ export function transitionCapability(current, event) {
       cleanText(item, `requirements[${index}]`, 500)
     );
   }
-  if (event.executionPlan !== undefined) {
-    next.executionPlan = cleanText(event.executionPlan, "executionPlan");
-  }
-  if (event.evidence !== undefined) {
-    next.evidence = cleanEvidenceList(event.evidence);
-  }
+  if (event.executionPlan !== undefined) next.executionPlan = cleanText(event.executionPlan, "executionPlan");
+  if (event.evidence !== undefined) next.evidence = cleanEvidenceList(event.evidence);
 
   if (nextState === "validated") {
     if (!next.executionPlan) {
       throw new Error("A capacidade não pode ser validada sem um plano de execução.");
     }
-    if (!next.evidence.length || next.evidence.some((item) => !item.passed)) {
-      throw new Error("A capacidade só pode ser validada com evidências de teste presentes e aprovadas.");
+    const assessment = evaluateCapabilityEvidence(next.evidence, next.validationProfile);
+    if (!assessment.ok) {
+      const details = [
+        assessment.missing.length ? `faltam: ${assessment.missing.join(", ")}` : "",
+        assessment.invalid.length ? `inválidas: ${assessment.invalid.join("; ")}` : "",
+      ].filter(Boolean).join(" | ");
+      throw new Error(`Política de validação não satisfeita (${details || assessment.reason}).`);
     }
     next.validation = {
       status: "validated",
       evidenceCount: next.evidence.length,
+      requiredEvidence: assessment.required,
       validatedAt: new Date().toISOString(),
+      provenance: "metadata_checked_not_independently_authenticated",
     };
   } else if (nextState === "blocked") {
     next.validation = {
@@ -142,7 +173,7 @@ export function transitionCapability(current, event) {
       reason: cleanText(event.reason, "reason", 1000),
       blockedAt: new Date().toISOString(),
     };
-  } else if (nextState !== "validated") {
+  } else {
     next.validation = null;
   }
 
@@ -151,7 +182,7 @@ export function transitionCapability(current, event) {
 }
 
 export function capabilityCanBeReused(capability) {
-  return Boolean(
+  if (!(
     capability &&
     capability.state === "validated" &&
     capability.validation?.status === "validated" &&
@@ -159,5 +190,7 @@ export function capabilityCanBeReused(capability) {
     Array.isArray(capability.evidence) &&
     capability.evidence.length > 0 &&
     capability.evidence.every((item) => item.passed === true)
-  );
+  )) return false;
+
+  return evaluateCapabilityEvidence(capability.evidence, capability.validationProfile).ok;
 }
