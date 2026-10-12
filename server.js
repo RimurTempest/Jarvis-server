@@ -6,6 +6,7 @@ import { SYSTEM_PROMPT } from "./behavior.js";
 import { randomUUID } from "node:crypto";
 import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
+import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -311,6 +312,7 @@ async function initializeDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_capabilities_state_updated ON jarvis_capabilities (state, updated_at DESC)`);
+    await initializeActionQueue(pool);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_learning_events_type ON jarvis_learning_events (event_type, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_messages_created ON jarvis_messages (created_at DESC, id DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_memories_updated ON jarvis_memories (updated_at DESC, id DESC)`);
