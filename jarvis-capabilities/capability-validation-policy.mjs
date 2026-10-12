@@ -2,9 +2,9 @@ import { verifyCapabilityEvidenceAttestation } from "./capability-evidence-attes
 
 /**
  * Generic, fail-closed capability validation policy.
- *
- * Evidence metadata is a checklist, not proof of authenticity. A trusted CI/device
- * executor must produce and authenticate evidence before final validation is allowed.
+ * Every evidence item must be signed and bound to the exact capability ID and
+ * full source revision being evaluated. A signature authenticates an issuer's
+ * assertion; it does not independently prove the assertion factually true.
  */
 const REQUIRED_BASE_EVIDENCE = Object.freeze([
   "source_review",
@@ -38,6 +38,17 @@ function validTimestamp(value) {
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }
 
+function validCapabilityId(value) {
+  return typeof value === "string" &&
+    value.length >= 1 &&
+    value.length <= 100 &&
+    /^[a-z0-9][a-z0-9._:-]*$/i.test(value);
+}
+
+function validSourceRevision(value) {
+  return typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(value);
+}
+
 export function requiredCapabilityEvidence(profile = {}) {
   const riskLevel = profile.riskLevel ?? "standard";
   if (!ALLOWED_RISK_LEVELS.has(riskLevel)) {
@@ -54,10 +65,14 @@ export function requiredCapabilityEvidence(profile = {}) {
 }
 
 /**
- * Evaluates completeness and consistency, not who created the evidence.
- * Evidence records must include a stable HTTPS reference, ISO timestamp and scope.
+ * Evidence is only eligible for the exact capability and full source revision
+ * supplied by the registry. Missing expected bindings fail closed.
  */
-export function evaluateCapabilityEvidence(evidence, profile = {}, { trustedIssuers = {} } = {}) {
+export function evaluateCapabilityEvidence(
+  evidence,
+  profile = {},
+  { trustedIssuers = {}, capabilityId, sourceRevision } = {},
+) {
   let required;
   try {
     required = requiredCapabilityEvidence(profile);
@@ -65,6 +80,12 @@ export function evaluateCapabilityEvidence(evidence, profile = {}, { trustedIssu
     return { ok: false, required: [], missing: [], invalid: [], reason: error.message };
   }
 
+  if (!validCapabilityId(capabilityId)) {
+    return { ok: false, required, missing: required, invalid: ["capabilityId esperado inválido."], reason: "capabilityId esperado inválido." };
+  }
+  if (!validSourceRevision(sourceRevision)) {
+    return { ok: false, required, missing: required, invalid: ["sourceRevision esperado deve ser um SHA completo."], reason: "sourceRevision esperado inválido." };
+  }
   if (!Array.isArray(evidence)) {
     return { ok: false, required, missing: required, invalid: [], reason: "evidence deve ser uma lista." };
   }
@@ -95,6 +116,12 @@ export function evaluateCapabilityEvidence(evidence, profile = {}, { trustedIssu
     }
     if (!nonEmpty(item.scope) || item.scope.trim().length > 500) {
       invalid.push(`${prefix}.scope inválido.`);
+    }
+    if (item.capabilityId !== capabilityId) {
+      invalid.push(`${prefix}.capabilityId não corresponde à capacidade avaliada.`);
+    }
+    if (item.sourceRevision !== sourceRevision) {
+      invalid.push(`${prefix}.sourceRevision não corresponde à revisão avaliada.`);
     }
     if (!verifyCapabilityEvidenceAttestation(item, trustedIssuers)) {
       invalid.push(`${prefix}.attestation não é válida para um emissor confiável.`);
