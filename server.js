@@ -381,6 +381,9 @@ function detectExplicitLearning(message) {
   const raw = String(message ?? "").trim();
   const normalized = normalizeText(raw);
   if (!raw || raw.length > MAX_AUTO_MEMORY_LENGTH) return null;
+  // Uma intenção de aprender uma capacidade pertence ao registro de capacidades,
+  // não deve ser memorizada incorretamente como preferência pessoal.
+  if (detectCapabilityLearningRequest(raw)) return null;
   // Nunca captura automaticamente credenciais ou números que pareçam documentos/cartões.
   if (looksSensitive(raw) || /\b(cpf|rg|cartao de credito|cartão de crédito|cvv|codigo de seguranca|código de segurança|seed phrase|frase de recuperacao|frase de recuperação)\b/i.test(raw)) return null;
 
