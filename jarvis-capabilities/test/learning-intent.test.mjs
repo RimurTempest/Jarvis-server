@@ -13,7 +13,6 @@ test("detects requests with a leading assistant name and different verbs", () =>
   assert.equal(detectCapabilityLearningRequest("JARVIS, aprenda a executar uma rotina de trabalho.").goal, "uma rotina de trabalho");
   assert.equal(detectCapabilityLearningRequest("Quero que você aprenda a fazer uma tarefa nova.").goal, "uma tarefa nova");
   assert.equal(detectCapabilityLearningRequest("Aprenda como usar um recurso do sistema").goal, "um recurso do sistema");
-  assert.equal(detectCapabilityLearningRequest("Quero que você aprenda a fazer uma tarefa nova.").goal, "uma tarefa nova");
 });
 
 test("detects English requests without task-specific shortcuts", () => {
