@@ -46,6 +46,7 @@ jobs:
           node --check test/validate-release.test.mjs
           node --check update-proposal.mjs
           node --check test/update-proposal.test.mjs
+          node --check ../jarvis-capabilities/capability-prompt-context.mjs
           node --check ../jarvis-capabilities/capability-registry.mjs
           node --check ../jarvis-capabilities/learning-intent.mjs
           node --check ../jarvis-capabilities/android-action-protocol.mjs
@@ -57,6 +58,7 @@ jobs:
         run: |
           node --test test/validate-release.test.mjs
           node --test test/update-proposal.test.mjs
+          node --test ../jarvis-capabilities/test/capability-prompt-context.test.mjs
           node --test ../jarvis-capabilities/test/capability-registry.test.mjs
           node --test ../jarvis-capabilities/test/learning-intent.test.mjs
           node --test ../jarvis-capabilities/test/android-action-protocol.test.mjs
