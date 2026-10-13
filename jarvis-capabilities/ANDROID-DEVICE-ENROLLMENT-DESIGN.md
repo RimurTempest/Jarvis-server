@@ -2,7 +2,7 @@
 
 ## Status
 
-The server-side enrollment foundation is now implemented on this branch and covered by automated tests. Android client integration is available separately as a development archive and has not yet been compiled or tested on a physical device. Keep this pull request in draft until the complete integration is verified.
+The server-side enrollment foundation is now implemented on this branch and covered by automated tests. The companion Android development archive now includes the pairing UI, Android Keystore-backed credential storage, and device-bound polling. The archive is maintained separately from this backend repository; a build and physical-device end-to-end test are still required. Keep this pull request in draft until the complete integration is verified.
 
 ## Required flow
 
@@ -25,7 +25,7 @@ The server-side enrollment foundation is now implemented on this branch and cove
 
 ## Integration gate
 
-The server-side registry and routes, Android enrollment UI/storage, revocation workflow, and automated tests must all be integrated before replacing the existing environment-token authentication. Until then, keep the existing delivery foundation disabled for production use and do not claim real-device execution.
+The server-side registry and routes, companion Android enrollment UI/storage, revocation workflow, and automated tests must all be reviewed and verified before enabling this feature in production or replacing the existing environment-token authentication. Until then, keep the existing delivery foundation disabled for production use and do not claim real-device execution.
 
 ## Verification checklist
 
