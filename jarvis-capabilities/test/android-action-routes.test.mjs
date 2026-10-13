@@ -7,8 +7,8 @@ function makeApp() {
   const routes = new Map();
   return {
     routes,
-    get(path, ...handlers) { routes.set(\`GET \${path}\`, handlers); },
-    post(path, ...handlers) { routes.set(\`POST \${path}\`, handlers); },
+    get(path, ...handlers) { routes.set(`GET ${path}`, handlers); },
+    post(path, ...handlers) { routes.set(`POST ${path}`, handlers); },
   };
 }
 function makeResponse() {
@@ -16,7 +16,7 @@ function makeResponse() {
 }
 const token = "device-token-value-with-at-least-32-characters";
 const deviceId = "android-primary";
-const headers = { authorization: \`Bearer \${token}\`, "x-jarvis-device-id": deviceId };
+const headers = { authorization: `Bearer ${token}`, "x-jarvis-device-id": deviceId };
 const tokenHash = createHash("sha256").update(token).digest();
 
 function makePool({ authorized = true } = {}) {
@@ -28,7 +28,7 @@ function makePool({ authorized = true } = {}) {
   };
 }
 async function runAuth(app, method, path, req, res) {
-  const [auth] = app.routes.get(\`\${method} \${path}\`);
+  const [auth] = app.routes.get(`${method} ${path}`);
   let nextCalled = false;
   await auth(req, res, () => { nextCalled = true; });
   return nextCalled;
