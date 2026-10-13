@@ -39,3 +39,16 @@ Se o microfone passar, mas a memória falhar, a validação bloqueia a atualiza�
 4. A restauração do código não reverte automaticamente alterações no banco. Migrações e recuperação dos dados precisam ser testadas separadamente.
 5. O APK antigo não pode simplesmente ser instalado por downgrade de `versionCode` em condições normais do Android. A recuperação do app deve usar uma compilação estável assinada com a mesma chave e um `versionCode` superior.
 6. O módulo e seu workflow estão versionados no GitHub. Eles ainda não estão integrados ao deploy do Render nem ao instalador Android, e não fazem backup, rollback ou instalação automática.
+
+
+## Proposta de atualização com aprovação explícita
+
+`update-proposal.mjs` valida o resumo que será apresentado ao responsável antes de uma atualização: versão atual/nova, lista de mudanças tipadas, explicação de permissões, URL HTTPS e hash SHA-256 do pacote. `decideUpdateApproval` só aceita uma decisão explícita do responsável e mantém uma recusa como recusa.
+
+Teste com:
+
+```sh
+node --test test/update-proposal.test.mjs
+```
+
+**Limite atual:** isto é a camada de política/validação dos metadados, não um instalador. Um hash fornecido pela própria proposta não comprova autenticidade; o cliente precisa baixar o pacote, calcular o hash e comparar, validar a assinatura/certificado do APK e usar o fluxo de instalação do Android. A aprovação não ignora esses controles. A interface Android, armazenamento durável da decisão e integração com o instalador serão implementados depois de inspecionar o projeto Android real. Nenhum APK é criado, publicado ou instalado por este módulo.
