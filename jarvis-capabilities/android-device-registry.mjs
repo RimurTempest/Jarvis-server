@@ -38,7 +38,7 @@ export async function initializeAndroidDeviceRegistry(pool) {
     revoked_at TIMESTAMPTZ
   )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS jarvis_android_pairing_codes (
-    id UUID PRIMARY KEY,
+    id TEXT PRIMARY KEY,
     code_hash BYTEA NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
