@@ -2,7 +2,7 @@
 
 ## Status
 
-Design only. This document does not enable device enrollment or change runtime authentication.
+The server-side enrollment foundation is now implemented on this branch and covered by automated tests. Android client integration is available separately as a development archive and has not yet been compiled or tested on a physical device. Keep this pull request in draft until the complete integration is verified.
 
 ## Required flow
 
