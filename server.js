@@ -37,6 +37,19 @@ function configureDatabaseUrl(rawUrl) {
   return url.toString();
 }
 
+function safeDatabaseError(error) {
+  const name = typeof error?.name === "string" ? error.name.slice(0, 80) : "Error";
+  const code = typeof error?.code === "string" && /^[A-Z0-9]{5}$/.test(error.code)
+    ? error.code
+    : "NO_DB_ERROR_CODE";
+  const message = String(error?.message ?? "Sem mensagem de erro")
+    .replace(/(?:postgres(?:ql)?|postgresql\+[^:]+):\/\/\S+/gi, "[URL-de-conexao-ocultada]")
+    .replace(/\b(password|passwd|pwd|user|username|token|secret)=([^&\s]+)/gi, "$1=[ocultado]")
+    .replace(/\s+/g, " ")
+    .slice(0, 240);
+  return `${name}; code=${code}; message=${message}`;
+}
+
 const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: configureDatabaseUrl(process.env.DATABASE_URL),
@@ -675,7 +688,8 @@ app.get("/health", async (_req, res) => {
       await pool.query("SELECT 1");
       database = "connected";
     }
-  } catch {
+  } catch (error) {
+    console.error("Falha no teste de conexão PostgreSQL:", safeDatabaseError(error));
     database = "disconnected";
   }
   const healthy = database === "connected" && providers.length > 0;
