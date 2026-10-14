@@ -8,6 +8,7 @@ import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, C
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
 import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
 import { registerAndroidActionRoutes } from "./jarvis-capabilities/android-action-routes.mjs";
+import { registerAndroidPairingPage } from "./jarvis-capabilities/android-pairing-page.mjs";
 import { buildCapabilityPromptContext } from "./jarvis-capabilities/capability-prompt-context.mjs";
 
 const { Pool } = pg;
@@ -31,10 +32,26 @@ const MAX_WEB_TEXT_PER_RESULT = 1800;
 const MAX_WEB_CONTEXT_CHARS = 10000;
 
 function configureDatabaseUrl(rawUrl) {
-  if (!rawUrl) return null;
-  const url = new URL(rawUrl);
-  url.searchParams.set("sslmode", "verify-full");
-  return url.toString();
+  if (typeof rawUrl !== "string" || !rawUrl.trim()) return null;
+
+  // Preserve the configured URL. Render internal PostgreSQL connections can
+  // use the private network without TLS; their optional TLS certificates are
+  // self-signed, so forcing sslmode=verify-full breaks internal connections.
+  // For external Render URLs, configure sslmode=require explicitly.
+  return rawUrl.trim();
+}
+
+function safeDatabaseError(error) {
+  const name = typeof error?.name === "string" ? error.name.slice(0, 80) : "Error";
+  const code = typeof error?.code === "string" && /^[A-Z0-9]{5}$/.test(error.code)
+    ? error.code
+    : "NO_DB_ERROR_CODE";
+  const message = String(error?.message ?? "Sem mensagem de erro")
+    .replace(/(?:postgres(?:ql)?|postgresql\+[^:]+):\/\/\S+/gi, "[URL-de-conexao-ocultada]")
+    .replace(/\b(password|passwd|pwd|user|username|token|secret)=([^&\s]+)/gi, "$1=[ocultado]")
+    .replace(/\s+/g, " ")
+    .slice(0, 240);
+  return `${name}; code=${code}; message=${message}`;
 }
 
 const pool = process.env.DATABASE_URL
@@ -675,7 +692,8 @@ app.get("/health", async (_req, res) => {
       await pool.query("SELECT 1");
       database = "connected";
     }
-  } catch {
+  } catch (error) {
+    console.error("Falha no teste de conexão PostgreSQL:", safeDatabaseError(error));
     database = "disconnected";
   }
   const healthy = database === "connected" && providers.length > 0;
@@ -998,6 +1016,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   return res.end();
 });
 
+registerAndroidPairingPage(app);
 registerAndroidActionRoutes(app, { pool, initializeDatabase });
 
 app.use((error, _req, res, _next) => {

@@ -1,43 +1,132 @@
-import { validateAndroidDeviceCredentials } from "./android-device-auth.mjs";
+import { timingSafeEqual } from "node:crypto";
+import { authenticateAndroidDevice, createAndroidPairingCode, enrollAndroidDevice, initializeAndroidDeviceRegistry, revokeAndroidDevice } from "./android-device-registry.mjs";
 import { claimNextAndroidAction, completeAndroidAction } from "./postgres-action-queue.mjs";
 
 function sendError(res, status, message) {
   return res.status(status).json({ error: message });
 }
 
-/**
- * Register the Android delivery endpoints on an existing Express app.
- * The dedicated device token is independent from JARVIS_API_TOKEN and must
- * be configured only on the server and the authorized device.
- *
- * This module deliberately exposes polling/results only. It does not enqueue
- * actions from chat or allow a device to declare a capability validated.
- */
+function bearerMatches(authorization, expected) {
+  if (typeof authorization !== "string" || typeof expected !== "string" || expected.length < 32) return false;
+  const match = /^Bearer\s+([^\s]+)$/i.exec(authorization);
+  if (!match) return false;
+  const actual = Buffer.from(match[1], "utf8");
+  const wanted = Buffer.from(expected, "utf8");
+  return actual.length === wanted.length && timingSafeEqual(actual, wanted);
+}
+
+function createRateLimiter({ limit, windowMs, now = () => Date.now() }) {
+  const buckets = new Map();
+  return (key) => {
+    const current = now();
+    const previous = buckets.get(key);
+    if (!previous || current - previous.startedAt >= windowMs) {
+      buckets.set(key, { startedAt: current, count: 1 });
+      return true;
+    }
+    previous.count += 1;
+    return previous.count <= limit;
+  };
+}
+
+/** Register enrollment and device-bound action delivery routes. */
 export function registerAndroidActionRoutes(app, {
   pool,
   initializeDatabase,
   getEnv = () => process.env,
   claimAction = claimNextAndroidAction,
   completeAction = completeAndroidAction,
+  pairingLimiter = createRateLimiter({ limit: 5, windowMs: 60_000 }),
+  enrollmentLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 }),
 } = {}) {
-  if (!app || typeof app.get !== "function" || typeof app.post !== "function") {
-    throw new TypeError("app Express inválido.");
-  }
-  if (typeof initializeDatabase !== "function") {
-    throw new TypeError("initializeDatabase é obrigatório.");
+  if (!app || typeof app.get !== "function" || typeof app.post !== "function") throw new TypeError("app Express inválido.");
+  if (typeof initializeDatabase !== "function") throw new TypeError("initializeDatabase é obrigatório.");
+
+  let registryReady;
+  async function ensureRegistry() {
+    if (!registryReady) {
+      registryReady = initializeAndroidDeviceRegistry(pool).catch((error) => {
+        registryReady = null;
+        throw error;
+      });
+    }
+    return registryReady;
   }
 
-  function authenticate(req, res, next) {
-    const env = getEnv();
-    const result = validateAndroidDeviceCredentials({
-      authorization: req.headers?.authorization,
-      deviceIdHeader: req.headers?.["x-jarvis-device-id"],
-      expectedToken: env?.JARVIS_ANDROID_DEVICE_TOKEN,
-      expectedDeviceId: env?.JARVIS_ANDROID_DEVICE_ID,
-    });
-    if (!result.ok) return sendError(res, 401, "Dispositivo Android não autorizado.");
-    return next();
+  function adminAuthorized(req) {
+    return bearerMatches(req.headers?.authorization, getEnv()?.JARVIS_ANDROID_ENROLLMENT_ADMIN_TOKEN);
   }
+
+  async function authenticate(req, res, next) {
+    if (!pool) return sendError(res, 503, "Autenticação de dispositivos indisponível.");
+    try {
+      await initializeDatabase();
+      await ensureRegistry();
+      const authorization = req.headers?.authorization;
+      const match = typeof authorization === "string" ? /^Bearer\s+([^\s]+)$/i.exec(authorization) : null;
+      const result = await authenticateAndroidDevice(pool, {
+        deviceId: req.headers?.["x-jarvis-device-id"],
+        token: match?.[1],
+      });
+      if (!result.ok) return sendError(res, 401, "Dispositivo Android não autorizado.");
+      return next();
+    } catch {
+      return sendError(res, 503, "Autenticação de dispositivos indisponível.");
+    }
+  }
+
+  app.post("/api/android/enrollment/pairing-code", async (req, res) => {
+    const ip = String(req.ip || req.socket?.remoteAddress || "unknown");
+    if (!pairingLimiter(ip)) return sendError(res, 429, "Limite de solicitações excedido.");
+    if (!adminAuthorized(req)) return sendError(res, 401, "Operação administrativa não autorizada.");
+    if (!pool) return sendError(res, 503, "Registro de dispositivos indisponível.");
+    try {
+      await initializeDatabase();
+      await ensureRegistry();
+      const ttlMs = req.body?.ttlMs === undefined ? undefined : req.body.ttlMs;
+      const pairing = await createAndroidPairingCode(pool, ttlMs === undefined ? {} : { ttlMs });
+      return res.status(201).json({ code: pairing.code, expiresAt: pairing.expiresAt });
+    } catch {
+      return sendError(res, 500, "Não foi possível criar o código de pareamento.");
+    }
+  });
+
+  app.post("/api/android/enrollment/complete", async (req, res) => {
+    const ip = String(req.ip || req.socket?.remoteAddress || "unknown");
+    if (!enrollmentLimiter(ip)) return sendError(res, 429, "Limite de tentativas excedido.");
+    if (!pool) return sendError(res, 503, "Registro de dispositivos indisponível.");
+    const code = req.body?.code;
+    const deviceId = req.body?.deviceId;
+    if (typeof code !== "string" || typeof deviceId !== "string") {
+      return sendError(res, 400, "Código e identificador do dispositivo são obrigatórios.");
+    }
+    try {
+      await initializeDatabase();
+      await ensureRegistry();
+      const enrolled = await enrollAndroidDevice(pool, { code, deviceId });
+      return res.status(201).json(enrolled);
+    } catch (error) {
+      if (error?.code === "DEVICE_ALREADY_REGISTERED") return sendError(res, 409, "O dispositivo já está registrado.");
+      if (error?.code === "PAIRING_CODE_INVALID") return sendError(res, 400, "Código de pareamento inválido ou expirado.");
+      if (error instanceof TypeError) return sendError(res, 400, "Dados de pareamento inválidos.");
+      return sendError(res, 500, "Não foi possível registrar o dispositivo.");
+    }
+  });
+
+  app.post("/api/android/devices/:id/revoke", async (req, res) => {
+    if (!adminAuthorized(req)) return sendError(res, 401, "Operação administrativa não autorizada.");
+    if (!pool) return sendError(res, 503, "Registro de dispositivos indisponível.");
+    try {
+      await initializeDatabase();
+      await ensureRegistry();
+      const result = await revokeAndroidDevice(pool, { deviceId: req.params?.id });
+      if (!result.revoked) return sendError(res, 404, "Dispositivo ativo não encontrado.");
+      return res.status(200).json({ deviceId: result.deviceId, revoked: true });
+    } catch (error) {
+      if (error instanceof TypeError) return sendError(res, 400, "Identificador do dispositivo inválido.");
+      return sendError(res, 500, "Não foi possível revogar o dispositivo.");
+    }
+  });
 
   app.get("/api/android/actions/next", authenticate, async (req, res) => {
     if (!pool) return sendError(res, 503, "Fila de ações indisponível.");
@@ -63,7 +152,6 @@ export function registerAndroidActionRoutes(app, {
         !req.body.result || typeof req.body.result !== "object" || Array.isArray(req.body.result)) {
       return sendError(res, 400, "O resultado da ação deve ser um objeto.");
     }
-
     try {
       await initializeDatabase();
       const completed = await completeAction(pool, {
