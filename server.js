@@ -8,6 +8,7 @@ import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, C
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
 import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
 import { registerAndroidActionRoutes } from "./jarvis-capabilities/android-action-routes.mjs";
+import { registerAndroidPairingPage } from "./jarvis-capabilities/android-pairing-page.mjs";
 import { buildCapabilityPromptContext } from "./jarvis-capabilities/capability-prompt-context.mjs";
 
 const { Pool } = pg;
@@ -1015,6 +1016,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   return res.end();
 });
 
+registerAndroidPairingPage(app);
 registerAndroidActionRoutes(app, { pool, initializeDatabase });
 
 app.use((error, _req, res, _next) => {
