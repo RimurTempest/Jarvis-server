@@ -31,10 +31,13 @@ const MAX_WEB_TEXT_PER_RESULT = 1800;
 const MAX_WEB_CONTEXT_CHARS = 10000;
 
 function configureDatabaseUrl(rawUrl) {
-  if (!rawUrl) return null;
-  const url = new URL(rawUrl);
-  url.searchParams.set("sslmode", "verify-full");
-  return url.toString();
+  if (typeof rawUrl !== "string" || !rawUrl.trim()) return null;
+
+  // Preserve the configured URL. Render internal PostgreSQL connections can
+  // use the private network without TLS; their optional TLS certificates are
+  // self-signed, so forcing sslmode=verify-full breaks internal connections.
+  // For external Render URLs, configure sslmode=require explicitly.
+  return rawUrl.trim();
 }
 
 function safeDatabaseError(error) {
