@@ -1,3 +1,4 @@
+import { containsLikelySecret } from "./secret-scanner.mjs";
 import { createHash } from "node:crypto";
 
 const MAX_FILES = 30;
@@ -6,8 +7,6 @@ const MAX_TOTAL_BYTES = 500_000;
 const MAX_TESTS = 50;
 const VALID_RISK_LEVELS = new Set(["standard", "elevated", "high"]);
 const FULL_REVISION = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
-const PRIVATE_KEY_MARKER = /-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/i;
-const LIKELY_SECRET = /(?:\bsk-[A-Za-z0-9_-]{24,}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bAKIA[0-9A-Z]{16}\b)/;
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -103,7 +102,7 @@ export function validateSelfImprovementProposal(input) {
       const bytes = Buffer.byteLength(content, "utf8");
       if (bytes > MAX_FILE_BYTES) errors.push(`Arquivo excede o limite de ${MAX_FILE_BYTES} bytes: ${path}.`);
       totalBytes += bytes;
-      if (PRIVATE_KEY_MARKER.test(content) || LIKELY_SECRET.test(content)) {
+      if (containsLikelySecret(content)) {
         errors.push(`Possível segredo detectado no conteúdo de ${path}.`);
       }
       if (requiresElevatedReview(path)) protectedPaths.push(path);
