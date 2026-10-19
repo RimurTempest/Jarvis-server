@@ -1,0 +1,52 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { isDirectAndroidActionRequest, proposeAndroidAction } from "./android-action-proposal.mjs";
+
+test("recognizes direct action requests in Portuguese", () => {
+  assert.equal(isDirectAndroidActionRequest("Jarvis, abra as configurações de Bluetooth"), true);
+  assert.equal(isDirectAndroidActionRequest("Por favor, ligue para +55 11 99999-0000"), true);
+  assert.equal(isDirectAndroidActionRequest("Quero que você copie o texto: teste"), true);
+});
+
+test("does not classify explanations or learning requests as execution", () => {
+  assert.equal(isDirectAndroidActionRequest("Como faço para abrir o Bluetooth?"), false);
+  assert.equal(isDirectAndroidActionRequest("Aprenda a abrir aplicativos"), false);
+  assert.equal(isDirectAndroidActionRequest("O que significa abrir uma URL?"), false);
+});
+
+test("does not call the model when the front gate rejects the message", async () => {
+  let called = false;
+  const provider = { model: "test", client: { chat: { completions: { create: async () => { called = true; return {}; } } } } };
+  assert.equal(await proposeAndroidAction(provider, "Como faço para abrir o Bluetooth?"), null);
+  assert.equal(called, false);
+});
+
+test("validates model-proposed actions before returning them", async () => {
+  const provider = {
+    model: "test",
+    client: { chat: { completions: { create: async () => ({
+      choices: [{ message: { tool_calls: [{
+        type: "function",
+        function: { name: "propose_android_action", arguments: JSON.stringify({
+          action: { type: "open_settings", packageName: null, url: null, phoneNumber: null, setting: "bluetooth", text: null }
+        }) }
+      }] } }]
+    }) } } }
+  };
+  assert.deepEqual(await proposeAndroidAction(provider, "Jarvis, abra as configurações de Bluetooth"), { type: "open_settings", setting: "bluetooth" });
+});
+
+test("rejects unsupported or malformed model proposals", async () => {
+  const provider = {
+    model: "test",
+    client: { chat: { completions: { create: async () => ({
+      choices: [{ message: { tool_calls: [{
+        type: "function",
+        function: { name: "propose_android_action", arguments: JSON.stringify({
+          action: { type: "run_shell", packageName: null, url: null, phoneNumber: null, setting: null, text: null }
+        }) }
+      }] } }]
+    }) } } }
+  };
+  assert.equal(await proposeAndroidAction(provider, "Jarvis, abra o aplicativo"), null);
+});
