@@ -47,7 +47,7 @@ async function request(fetchImpl, token, path, method = "GET", body) {
  * draft-only. The caller must keep this feature disabled until deployment
  * permissions and rollback/health monitoring have been configured.
  */
-export async function activateValidatedSelfImprovementDraft({
+export async function mergeValidatedSelfImprovementDraft({
   enabled = false,
   token,
   repository,
@@ -59,25 +59,25 @@ export async function activateValidatedSelfImprovementDraft({
   changedPaths,
   fetchImpl = fetch,
 }) {
-  if (enabled !== true) return { activated: false, reason: "auto_activation_disabled" };
-  if (typeof token !== "string" || token.trim().length < 20) return { activated: false, reason: "token_unavailable" };
-  if (!validRepository(repository)) return { activated: false, reason: "invalid_repository" };
-  if (!Number.isSafeInteger(pullRequestNumber) || pullRequestNumber < 1) return { activated: false, reason: "invalid_pull_request" };
-  if (typeof baseBranch !== "string" || !baseBranch.trim() || !validSha(expectedHeadSha)) return { activated: false, reason: "invalid_revision" };
-  if (validation?.ready !== true) return { activated: false, reason: "ci_not_passed" };
-  if (requiresHumanReview !== false) return { activated: false, reason: "human_review_required" };
+  if (enabled !== true) return { merged: false, reason: "auto_activation_disabled" };
+  if (typeof token !== "string" || token.trim().length < 20) return { merged: false, reason: "token_unavailable" };
+  if (!validRepository(repository)) return { merged: false, reason: "invalid_repository" };
+  if (!Number.isSafeInteger(pullRequestNumber) || pullRequestNumber < 1) return { merged: false, reason: "invalid_pull_request" };
+  if (typeof baseBranch !== "string" || !baseBranch.trim() || !validSha(expectedHeadSha)) return { merged: false, reason: "invalid_revision" };
+  if (validation?.ready !== true) return { merged: false, reason: "ci_not_passed" };
+  if (requiresHumanReview !== false) return { merged: false, reason: "human_review_required" };
   if (!Array.isArray(changedPaths) || changedPaths.length < 1 || changedPaths.length > 30 ||
       !changedPaths.every(autoActivationPathAllowed)) {
-    return { activated: false, reason: "protected_paths" };
+    return { merged: false, reason: "protected_paths" };
   }
-  if (typeof fetchImpl !== "function") return { activated: false, reason: "invalid_fetch" };
+  if (typeof fetchImpl !== "function") return { merged: false, reason: "invalid_fetch" };
 
   const repoPath = "/repos/" + repository;
   const pullRequest = await request(fetchImpl, token, repoPath + "/pulls/" + pullRequestNumber);
   if (pullRequest?.state !== "open" || pullRequest?.draft !== true ||
       pullRequest?.base?.ref !== baseBranch ||
       pullRequest?.head?.sha?.toLowerCase() !== expectedHeadSha.toLowerCase()) {
-    return { activated: false, reason: "stale_or_non_draft_pr" };
+    return { merged: false, reason: "stale_or_non_draft_pr" };
   }
 
   await request(fetchImpl, token, repoPath + "/pulls/" + pullRequestNumber + "/ready_for_review", "POST", {});
@@ -89,7 +89,7 @@ export async function activateValidatedSelfImprovementDraft({
     if (merged?.merged !== true || !validSha(merged?.sha)) {
       throw new Error("GitHub did not confirm the merge.");
     }
-    return { activated: true, mergeCommitSha: merged.sha, pullRequestNumber };
+    return { merged: true, mergeCommitSha: merged.sha, pullRequestNumber };
   } catch (error) {
     try {
       await request(fetchImpl, token, repoPath + "/pulls/" + pullRequestNumber + "/convert_to_draft", "POST", {});
