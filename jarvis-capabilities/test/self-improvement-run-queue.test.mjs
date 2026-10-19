@@ -139,9 +139,13 @@ test("recovery window rejects invalid durations", async () => {
 test("final state requires exact PR metadata and errors require safe codes", async () => {
   const fakePool = {
     calls: 0,
+    currentState: "publishing",
+    lastParams: null,
     async query(sql, params) {
-      if (sql.startsWith("SELECT state")) return { rowCount: 1, rows: [{ state: "publishing" }] };
+      if (sql.startsWith("SELECT state")) return { rowCount: 1, rows: [{ state: this.currentState }] };
       this.calls++;
+      this.lastParams = params;
+      this.currentState = params[1];
       return { rowCount: 1, rows: [{ state: params[1] }] };
     },
   };
@@ -165,13 +169,22 @@ test("final state requires exact PR metadata and errors require safe codes", asy
     proposalSummary: "Example capability proposal",
     rollbackRevision: "not-a-sha",
   }), /rollbackRevision/i);
-  const merged = await updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "merged", {
+  const metadata = {
     baseRevision: "a".repeat(40),
     headRevision: "c".repeat(40),
     proposalDigest: "b".repeat(64),
     pullRequestNumber: 42,
     pullRequestUrl: "https://github.com/example/repo/pull/42",
     proposalSummary: "Example capability proposal",
-  });
+    mergeCommitSha: "d".repeat(40),
+  };
+  const merged = await updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "merged", metadata);
   assert.equal(merged.state, "merged");
+  const verified = await updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "runtime_verified", {
+    ...metadata,
+    runtimeRevision: "d".repeat(40),
+  });
+  assert.equal(verified.state, "runtime_verified");
+  assert.equal(fakePool.lastParams[4], "d".repeat(40));
+  assert.equal(fakePool.lastParams[5], "d".repeat(40));
 });
