@@ -189,6 +189,11 @@ function extractZipText(buffer, maxTotalChars = 12000) {
       text = text.replace(/gh[pousr]_[A-Za-z0-9_]{20,}/g, "[GITHUB_TOKEN_REDACTED]")
         .replace(/Bearer\s+[A-Za-z0-9._~+/-]{12,}/gi, "Bearer [REDACTED]")
         .replace(/sk-[A-Za-z0-9_-]{16,}/g, "[API_KEY_REDACTED]")
+        .replace(/AKIA[0-9A-Z]{16}/g, "[AWS_KEY_REDACTED]")
+        .replace(/xox[baprs]-[A-Za-z0-9-]{10,}/g, "[SLACK_TOKEN_REDACTED]")
+        .replace(/AIza[0-9A-Za-z_-]{30,}/g, "[GOOGLE_API_KEY_REDACTED]")
+        .replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[JWT_REDACTED]")
+        .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[PRIVATE_KEY_REDACTED]")
         .replace(/(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]");
       text = text.replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g, "");
       const piece = `--- ${name.slice(0, 160)} ---\n${text}`;
