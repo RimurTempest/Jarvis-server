@@ -55,6 +55,7 @@ export async function mergeValidatedSelfImprovementDraft({
   baseBranch,
   expectedHeadSha,
   validation,
+  validateCurrentDraft,
   requiresHumanReview,
   changedPaths,
   fetchImpl = fetch,
@@ -78,6 +79,10 @@ export async function mergeValidatedSelfImprovementDraft({
       pullRequest?.base?.ref !== baseBranch ||
       pullRequest?.head?.sha?.toLowerCase() !== expectedHeadSha.toLowerCase()) {
     return { merged: false, reason: "stale_or_non_draft_pr" };
+  }
+  if (typeof validateCurrentDraft === "function") {
+    const currentValidation = await validateCurrentDraft();
+    if (currentValidation?.ready !== true) return { merged: false, reason: "ci_not_passed" };
   }
 
   await request(fetchImpl, token, repoPath + "/pulls/" + pullRequestNumber + "/ready_for_review", "POST", {});
