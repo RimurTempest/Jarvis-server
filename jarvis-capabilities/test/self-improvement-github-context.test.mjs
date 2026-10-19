@@ -86,3 +86,27 @@ test("rejects a repository with no eligible source files", async () => {
     goal: "Add an email capability", fetchImpl,
   }), /Nenhum arquivo de código seguro/i);
 });
+
+test("refuses source files containing likely credentials before returning model context", async () => {
+  const secretContent = 'const mailPassword = "real-mail-password-value-123";';
+  const fetchImpl = async (url) => {
+    if (url.endsWith("/git/ref/heads/main")) return response(200, { object: { sha: revision } });
+    if (url.includes("/git/trees/")) {
+      return response(200, {
+        truncated: false,
+        tree: [{ path: "app/src/main/java/com/example/MailConfig.kt", type: "blob", size: secretContent.length }],
+      });
+    }
+    if (url.includes("/contents/")) {
+      return response(200, { encoding: "base64", content: Buffer.from(secretContent).toString("base64") });
+    }
+    throw new Error("Unexpected request.");
+  };
+  await assert.rejects(fetchSelfImprovementRepositoryContext({
+    token: "x".repeat(40),
+    repository: "example/repo",
+    baseBranch: "main",
+    goal: "Add an email capability",
+    fetchImpl,
+  }), /Possível segredo detectado/i);
+});
