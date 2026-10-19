@@ -209,6 +209,15 @@ export async function updateSelfImprovementRun(pool, id, nextState, metadata = {
       throw new Error("Uma execução concluída exige PR, URL, digest e revisões base/head.");
     }
   }
+  if (["merged", "runtime_verified", "rolled_back", "merge_unverified"].includes(nextState) && !mergeCommitSha) {
+    throw new Error("Uma execução mesclada exige o SHA exato do commit de merge.");
+  }
+  if (nextState === "runtime_verified" && !runtimeRevision) {
+    throw new Error("Uma execução verificada exige a revisão exata observada em runtime.");
+  }
+  if (nextState === "rolled_back" && (!runtimeRevision || !rollbackRevision)) {
+    throw new Error("Uma reversão concluída exige as revisões exatas de runtime e rollback.");
+  }
   if (nextState === "failed" && !errorCode) throw new Error("Execução falha exige um código de erro não sensível.");
 
   const result = await pool.query(`UPDATE jarvis_self_improvement_runs
