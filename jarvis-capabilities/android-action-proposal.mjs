@@ -3,9 +3,9 @@ import { validateAndroidAction } from "./android-action-protocol.mjs";
 function normalizePortuguese(value) {
   return String(value ?? "")
     .normalize("NFD")
-    .replace(/[\\u0300-\\u036f]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -18,8 +18,8 @@ export function isDirectAndroidActionRequest(message) {
   const text = normalizePortuguese(message);
   if (!text || text.length > 4000) return false;
 
-  const imperativeAtStart = /^(?:(?:jarvis|por favor|por gentileza)[,:\\s]*)*(?:pode\\s+)?(?:abr[ae]|abrir|acesse|acessa|acessar|visite|visitar|ligue|ligar|copie|copiar|va para|vai para)\\b/.test(text);
-  const explicitRequest = /\\b(quero que voce|preciso que voce|peco que voce)\\b.{0,100}\\b(abra|abrir|acesse|acessar|visite|ligue|ligar|copie|copiar)\\b/.test(text);
+  const imperativeAtStart = /^(?:(?:jarvis|por favor|por gentileza)[,:\s]*)*(?:pode\s+)?(?:abr[ae]|abrir|acesse|acessa|acessar|visite|visitar|ligue|ligar|copie|copiar|va para|vai para)\b/.test(text);
+  const explicitRequest = /\b(quero que voce|preciso que voce|peco que voce)\b.{0,100}\b(abra|abrir|acesse|acessar|visite|ligue|ligar|copie|copiar)\b/.test(text);
   return imperativeAtStart || explicitRequest;
 }
 
