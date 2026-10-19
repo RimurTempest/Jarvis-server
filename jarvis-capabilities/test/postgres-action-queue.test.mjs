@@ -111,15 +111,21 @@ test("accepts results only with the active device lease and preserves confirmati
       id: "action-01",
       capability_id: "capability-01",
       action: { type: "copy_text", text: "hello" },
-      requires_user_confirmation: false,
+      requires_user_confirmation: true,
       expires_at: new Date(Date.now() + 120_000),
     },
   });
-  const completed = await completeAndroidAction(pool, {
+  await assert.rejects(() => completeAndroidAction(pool, {
     id: "action-01",
     deviceId: "android-primary",
     leaseToken: "known-token",
     result: { ok: true, message: "copied" },
+  }), /confirmação explícita/);
+  const completed = await completeAndroidAction(pool, {
+    id: "action-01",
+    deviceId: "android-primary",
+    leaseToken: "known-token",
+    result: { ok: true, message: "copied", userConfirmed: true },
   });
   assert.equal(completed.state, "completed");
   assert.ok(pool.calls.some((call) => call.sql.includes("lease_token_hash = NULL")));
