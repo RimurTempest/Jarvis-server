@@ -1,8 +1,8 @@
 import { validateSelfImprovementProposal } from "./self-improvement-proposal-policy.mjs";
 
 const MAX_CONTEXT_FILES = 20;
-const MAX_CONTEXT_FILE_CHARS = 30_000;
-const MAX_TOTAL_CONTEXT_CHARS = 120_000;
+const MAX_CONTEXT_FILE_CHARS = 60_000;
+const MAX_TOTAL_CONTEXT_CHARS = 180_000;
 const MAX_RESEARCH_CHARS = 20_000;
 const FULL_REVISION = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
 
