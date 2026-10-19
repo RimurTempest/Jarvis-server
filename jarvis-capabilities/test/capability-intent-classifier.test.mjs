@@ -41,6 +41,10 @@ test("rejects low-confidence or vague capability goals", async () => {
     provider: providerReturning({ intent: "create_capability", goal: "enviar e-mails", confidence: 0.7 }),
     message: "Mande um e-mail",
   }), null);
+  assert.equal(await classifyCapabilityIntent({
+    provider: providerReturning({ intent: "not_capability", goal: null, confidence: 0.4 }),
+    message: "Talvez você devesse fazer isso",
+  }), null);
 });
 
 test("falls back safely when the model returns invalid JSON or fails", async () => {
