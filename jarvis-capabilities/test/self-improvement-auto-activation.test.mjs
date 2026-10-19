@@ -62,6 +62,19 @@ test("refuses a stale or non-draft PR before any merge call", async () => {
   assert.equal(mock.calls.length, 1);
 });
 
+test("rechecks current CI immediately before merging", async () => {
+  const mock = mockFetch([
+    { payload: { state: "open", draft: true, base: { ref: "main" }, head: { sha: "a".repeat(40) } },
+  ]);
+  const result = await mergeValidatedSelfImprovementDraft({
+    ...base,
+    fetchImpl: mock.fetchImpl,
+    validateCurrentDraft: async () => ({ ready: false }),
+  });
+  assert.deepEqual(result, { merged: false, reason: "ci_not_passed" });
+  assert.equal(mock.calls.length, 1);
+});
+
 test("marks a safe exact-SHA draft ready and merges only after validation", async () => {
   const mock = mockFetch([
     { payload: { state: "open", draft: true, base: { ref: "main" }, head: { sha: "a".repeat(40) } } },
