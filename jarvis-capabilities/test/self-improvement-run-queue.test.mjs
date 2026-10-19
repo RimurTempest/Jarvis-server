@@ -35,9 +35,10 @@ test("self-improvement queue persists jobs, enforces one active job, and claims 
     await pool.query("DELETE FROM jarvis_self_improvement_runs WHERE capability_id = $1", [capabilityId]);
 
     const first = await enqueueSelfImprovementRun(pool, {
-      id: firstId, capabilityId, repository: "example/repo", baseBranch: "main",
+      id: firstId, capabilityId, repository: "example/repo", baseBranch: "main", target: "android",
     });
     assert.equal(first.state, "queued");
+    assert.equal(first.target, "android");
     await assert.rejects(
       enqueueSelfImprovementRun(pool, { id: secondId, capabilityId, repository: "example/repo", baseBranch: "main" }),
       (error) => error.code === "SELF_IMPROVEMENT_ALREADY_ACTIVE",
@@ -78,6 +79,9 @@ test("queue validation rejects malformed identifiers and unsafe branches", async
   await assert.rejects(enqueueSelfImprovementRun(fakePool, {
     id: "11111111-1111-4111-8111-111111111111", capabilityId: "capability-1", repository: "example/repo", baseBranch: "../main",
   }), /baseBranch/i);
+  await assert.rejects(enqueueSelfImprovementRun(fakePool, {
+    id: "11111111-1111-4111-8111-111111111111", capabilityId: "capability-1", repository: "example/repo", baseBranch: "main", target: "unknown",
+  }), /target inválido/i);
 });
 
 test("recovery window rejects invalid durations", async () => {
