@@ -41,7 +41,9 @@ function scorePath(path, goalWords) {
   if (normalized === "server.js") score += 1000;
   if (normalized.endsWith("/mainactivity.kt")) score += 950;
   if (normalized.endsWith("/androidmanifest.xml")) score += 900;
-  if (/^app\/(?:build\.gradle\.kts|build\.gradle)$/.test(normalized)) score += 850;
+  if (/(^|\/)app\/(?:build\.gradle\.kts|build\.gradle)$/.test(normalized)) score += 850;
+  if (/(^|\/)(?:settings\.gradle\.kts|settings\.gradle|build\.gradle\.kts|build\.gradle)$/.test(normalized)) score += 700;
+  if (/(^|\/)gradle\/libs\.versions\.toml$/.test(normalized)) score += 650;
   if (/(^|\/)src\/(?:test|androidtest)\//.test(normalized) && /\.kt$/i.test(normalized)) score += 200;
   if (normalized === "package.json") score += 900;
   if (normalized === "behavior.js") score += 850;
