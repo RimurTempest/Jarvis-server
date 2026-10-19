@@ -1537,6 +1537,18 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     return res.end();
   }
 
+  if (queuedSelfImprovementRun) {
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    sendEvent(res, "self_improvement_started", {
+      runId: queuedSelfImprovementRun.id,
+      capabilityId: activeCapability?.id ?? null,
+      goal: activeCapability?.goal ?? message,
+      target: resolveSelfImprovementTarget(activeCapability?.goal ?? message).target,
+    });
+  }
+
   const wantsWebSearch = (Boolean(capabilityLearningRequest) && !capabilityAlreadyReusable) || shouldSearchWeb(message);
   let webSearch = null;
   if (wantsWebSearch) {
@@ -1555,16 +1567,10 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     { role: "user", content: message },
   ];
 
-  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  if (queuedSelfImprovementRun) {
-    sendEvent(res, "self_improvement_started", {
-      runId: queuedSelfImprovementRun.id,
-      capabilityId: activeCapability?.id ?? null,
-      goal: activeCapability?.goal ?? message,
-      target: resolveSelfImprovementTarget(activeCapability?.goal ?? message).target,
-    });
+  if (!res.headersSent) {
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Content-Type-Options", "nosniff");
   }
 
   let clientDisconnected = false;
