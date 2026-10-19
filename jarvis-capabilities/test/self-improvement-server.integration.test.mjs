@@ -172,3 +172,86 @@ test("Android capability requests do not fall back to the server repository when
   assert.equal(status.status, 200);
   assert.deepEqual((await status.json()).proposals, []);
 });
+
+
+test("self-improvement notifications return safe status metadata and require authentication", { skip: !databaseUrl }, async (t) => {
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const apiToken = "test-jarvis-notification-token";
+  const runId = "11111111-1111-4111-8111-111111111111";
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DATABASE_URL: databaseUrl,
+      JARVIS_API_TOKEN: apiToken,
+      GROQ_API_KEY: "test-provider-key",
+      OPENAI_API_KEY: "",
+      EXA_API_KEY: "",
+      JARVIS_SELF_IMPROVEMENT_ENABLED: "false",
+      JARVIS_GITHUB_TOKEN: "",
+    },
+    stdio: "ignore",
+  });
+  let pool;
+  let capabilityId = null;
+  t.after(async () => {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) return resolve();
+      const timeout = setTimeout(resolve, 3000);
+      child.once("exit", () => { clearTimeout(timeout); resolve(); });
+    });
+    if (pool) {
+      if (capabilityId) {
+        await pool.query("DELETE FROM jarvis_self_improvement_runs WHERE id = $1", [runId]).catch(() => {});
+        await pool.query("DELETE FROM jarvis_capabilities WHERE id = $1", [capabilityId]).catch(() => {});
+      }
+      await pool.end();
+    }
+  });
+
+  await waitForServer(baseUrl, child);
+  const headers = {
+    Authorization: `Bearer ${apiToken}`,
+    "Content-Type": "application/json",
+  };
+  const created = await fetch(`${baseUrl}/api/capabilities`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ goal: "Add a safe Android email drafting capability." }),
+  });
+  assert.equal(created.status, 201);
+  capabilityId = (await created.json()).capability.id;
+  pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  await pool.query("DELETE FROM jarvis_self_improvement_runs WHERE id = $1", [runId]);
+  await pool.query(
+    `INSERT INTO jarvis_self_improvement_runs
+      (id, capability_id, target, state, repository, base_branch, pull_request_number, pull_request_url, proposal_summary)
+     VALUES ($1, $2, 'android', 'draft_pr_created', 'RimurTempest/Jarvis-server', 'main', 999,
+       'https://github.com/RimurTempest/Jarvis-server/pull/999', 'Proposta de teste')`,
+    [runId, capabilityId],
+  );
+
+  const response = await fetch(`${baseUrl}/api/self-improvement/notifications?limit=10`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  const notification = body.notifications.find((item) => item.id === runId);
+  assert.ok(notification);
+  assert.equal(notification.capabilityId, capabilityId);
+  assert.equal(notification.state, "draft_pr_created");
+  assert.equal(notification.notificationType, "proposal_ready_for_review");
+  assert.equal(notification.summary, "Proposta de teste");
+  assert.equal(Object.hasOwn(notification, "token"), false);
+  assert.equal(Object.hasOwn(notification, "githubToken"), false);
+
+  const invalidLimit = await fetch(`${baseUrl}/api/self-improvement/notifications?limit=999`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  assert.equal(invalidLimit.status, 400);
+  const unauthorized = await fetch(`${baseUrl}/api/self-improvement/notifications`);
+  assert.equal(unauthorized.status, 401);
+});
