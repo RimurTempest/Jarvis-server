@@ -16,6 +16,7 @@ import { prepareSelfImprovementDraft } from "./jarvis-capabilities/self-improvem
 import { initializeSelfImprovementRunQueue, enqueueSelfImprovementRun, updateSelfImprovementRun, listSelfImprovementRuns } from "./jarvis-capabilities/self-improvement-run-queue.mjs";
 import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improvement-worker.mjs";
 import { inspectDraftPullRequestValidation } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
+import { runSelfImprovementCiRepairLoop } from "./jarvis-capabilities/self-improvement-ci-repair.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 
 const { Pool } = pg;
@@ -312,39 +313,108 @@ async function processSelfImprovementRun(run) {
   }
 
   const capability = selected.rows[0].record;
-  const result = await prepareSelfImprovementDraft({
+  const githubToken = process.env.JARVIS_GITHUB_TOKEN;
+  const requiredWorkflows = requiredWorkflowsForTarget(run.target);
+  const result = await runSelfImprovementCiRepairLoop({
     capability,
-    provider: providers[0],
-    fallbackProviders: providers.slice(1),
-    githubToken: process.env.JARVIS_GITHUB_TOKEN,
-    repository: run.repository,
-    baseBranch: run.base_branch,
-    searchResearch: async (goal) => searchWeb(
-      `Pesquise documentação oficial, APIs, permissões e limitações para implementar com segurança esta capacidade: ${goal}`
-    ),
-    onStage: async (stage) => {
-      // Final state requires the PR metadata and digest produced after publishing.
-      if (stage === "draft_pr_created") return;
-      await updateSelfImprovementRun(pool, run.id, stage);
+    maxRepairAttempts: 2,
+    maxValidationPolls: 60,
+    pollIntervalMs: 10000,
+    prepareDraft: async ({ capability: repairCapability, validationFeedback, attempt }) => {
+      if (attempt > 0) {
+        await recordLearningEvent(
+          "self_improvement_ci_repair_started",
+          `Iniciando tentativa de correção CI ${attempt}/2 para uma proposta que falhou nos testes.`,
+          { capabilityId: run.capability_id, runId: run.id, attempt, target: run.target },
+        );
+      }
+      return prepareSelfImprovementDraft({
+        capability: repairCapability,
+        provider: providers[0],
+        fallbackProviders: providers.slice(1),
+        validationFeedback,
+        githubToken,
+        repository: run.repository,
+        baseBranch: run.base_branch,
+        searchResearch: async (goal) => searchWeb(
+          `Pesquise documentação oficial, APIs, permissões e limitações para implementar com segurança esta capacidade: ${goal}`
+        ),
+        onStage: async (stage) => {
+          // A execução só é concluída após os workflows verificarem o SHA exato do draft PR.
+          if (stage === "draft_pr_created") return;
+          await updateSelfImprovementRun(pool, run.id, stage);
+        },
+      });
+    },
+    validateDraft: async (draft) => inspectDraftPullRequestValidation({
+      token: githubToken,
+      repository: run.repository,
+      pullRequestNumber: draft.pullRequest.number,
+      expectedHeadSha: draft.pullRequest.commitSha,
+      ...(requiredWorkflows ? { requiredWorkflows } : {}),
+    }),
+    onValidation: async ({ draft, validation }) => {
+      const pr = draft.pullRequest;
+      await updateSelfImprovementRun(pool, run.id, "publishing", {
+        baseRevision: draft.baseRevision,
+        headRevision: pr.commitSha,
+        proposalDigest: draft.proposalDigest,
+        pullRequestNumber: pr.number,
+        pullRequestUrl: pr.url,
+        proposalSummary: draft.summary,
+      });
+      if (validation?.ready === true) {
+        await recordLearningEvent(
+          "self_improvement_ci_passed",
+          "A proposta de nova habilidade passou pela validação CI independente na revisão exata.",
+          { capabilityId: run.capability_id, runId: run.id, pullRequestNumber: pr.number, pullRequestUrl: pr.url },
+        );
+      }
+    },
+    onRepair: async ({ failedAttempt, nextAttempt, draft, validation }) => {
+      await recordLearningEvent(
+        "self_improvement_ci_repair_attempt",
+        `Os testes da proposta falharam; o JARVIS iniciou a tentativa de correção ${nextAttempt}/2.`,
+        {
+          capabilityId: run.capability_id,
+          runId: run.id,
+          failedAttempt,
+          nextAttempt,
+          failedPullRequestNumber: draft.pullRequest.number,
+          failedPullRequestUrl: draft.pullRequest.url,
+          reasons: (validation?.reasons ?? []).filter((reason) => typeof reason === "string").slice(0, 10),
+          checks: [...(validation?.checks ?? []), ...(validation?.extraChecks ?? [])].map((check) => ({
+            name: String(check?.name ?? "unknown").slice(0, 120),
+            status: String(check?.status ?? "unknown").slice(0, 40),
+            conclusion: typeof check?.conclusion === "string" ? check.conclusion.slice(0, 40) : null,
+            runUrl: typeof check?.runUrl === "string" && check.runUrl.startsWith("https://github.com/")
+              ? check.runUrl.slice(0, 300)
+              : null,
+          })),
+        },
+      );
     },
   });
 
+  const finalDraft = result.draft;
   await updateSelfImprovementRun(pool, run.id, "draft_pr_created", {
-    baseRevision: result.baseRevision,
-    headRevision: result.pullRequest.commitSha,
-    proposalDigest: result.proposalDigest,
-    pullRequestNumber: result.pullRequest.number,
-    pullRequestUrl: result.pullRequest.url,
-    proposalSummary: result.summary,
+    baseRevision: finalDraft.baseRevision,
+    headRevision: finalDraft.pullRequest.commitSha,
+    proposalDigest: finalDraft.proposalDigest,
+    pullRequestNumber: finalDraft.pullRequest.number,
+    pullRequestUrl: finalDraft.pullRequest.url,
+    proposalSummary: finalDraft.summary,
   });
-  await recordLearningEvent("self_improvement_draft_created", result.summary, {
+  await recordLearningEvent("self_improvement_draft_created", finalDraft.summary, {
     capabilityId: run.capability_id,
     runId: run.id,
-    pullRequestNumber: result.pullRequest.number,
-    pullRequestUrl: result.pullRequest.url,
-    baseRevision: result.baseRevision,
-    proposalDigest: result.proposalDigest,
-    requiresHumanReview: result.requiresHumanReview,
+    pullRequestNumber: finalDraft.pullRequest.number,
+    pullRequestUrl: finalDraft.pullRequest.url,
+    baseRevision: finalDraft.baseRevision,
+    proposalDigest: finalDraft.proposalDigest,
+    requiresHumanReview: finalDraft.requiresHumanReview,
+    repairAttempts: result.repairAttempts,
+    ciValidated: result.validation.ready === true,
   });
 }
 
