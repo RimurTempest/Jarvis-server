@@ -71,7 +71,7 @@ export async function initializeSelfImprovementRunQueue(pool) {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
   await pool.query("ALTER TABLE jarvis_self_improvement_runs DROP CONSTRAINT IF EXISTS jarvis_self_improvement_runs_state_check");
-  await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD CONSTRAINT jarvis_self_improvement_runs_state_check CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'merged', 'failed'))");
+  await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD CONSTRAINT jarvis_self_improvement_runs_state_check CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'merged', 'runtime_verified', 'rolled_back', 'merge_unverified', 'failed'))");
   await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS head_revision TEXT");
   await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS target TEXT NOT NULL DEFAULT 'server'");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_self_improvement_runs_capability_created ON jarvis_self_improvement_runs (capability_id, created_at DESC)");
