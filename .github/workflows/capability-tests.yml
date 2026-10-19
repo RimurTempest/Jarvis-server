@@ -47,6 +47,8 @@ jobs:
       - name: Check capability module syntax
         run: |
           node --check jarvis-capabilities/capability-prompt-context.mjs
+          node --check jarvis-capabilities/self-improvement-proposal-policy.mjs
+          node --check jarvis-capabilities/test/self-improvement-proposal-policy.test.mjs
           node --check jarvis-capabilities/capability-registry.mjs
           node --check jarvis-capabilities/capability-validation-policy.mjs
           node --check jarvis-capabilities/capability-evidence-attestation.mjs
@@ -71,6 +73,7 @@ jobs:
       - name: Run capability tests
         run: |
           node --test jarvis-capabilities/test/capability-prompt-context.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-proposal-policy.test.mjs
           node --test jarvis-capabilities/test/capability-registry.test.mjs
           node --test jarvis-capabilities/test/capability-validation-policy.test.mjs
           node --test jarvis-capabilities/test/capability-evidence-attestation.test.mjs
