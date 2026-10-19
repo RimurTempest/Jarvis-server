@@ -51,6 +51,14 @@ export async function initializeActionQueue(pool) {
     result JSONB
   )`);
   await pool.query("ALTER TABLE jarvis_action_queue ADD COLUMN IF NOT EXISTS target_device_id TEXT");
+  // Safely retire legacy rows that predate target-device binding instead of
+  // allowing unaddressed actions to remain stuck or be delivered ambiguously.
+  await pool.query(`UPDATE jarvis_action_queue
+    SET state = 'expired', completed_at = COALESCE(completed_at, NOW()),
+        result = COALESCE(result, '{"ok":false,"message":"Ação legada sem destino de dispositivo."}'::jsonb),
+        lease_token_hash = NULL
+    WHERE target_device_id IS NULL AND state IN ('pending', 'delivered')`);
+  await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN target_device_id SET NOT NULL");
   await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE");
   await pool.query("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE WHERE state IN ('pending', 'delivered')");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_pending ON jarvis_action_queue (target_device_id, created_at, id) WHERE state = 'pending'");
