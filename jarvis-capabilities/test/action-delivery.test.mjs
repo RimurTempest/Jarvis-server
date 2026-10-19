@@ -58,7 +58,7 @@ test("accepts a result only from the device and lease that received the action",
   }), /não corresponde/);
   const completed = acceptActionResult(claimed, {
     deviceId: "android-primary", leaseToken: "one-time-secret",
-    result: { ok: true, message: "copied" },
+    result: { ok: true, message: "copied", userConfirmed: true },
   });
   assert.equal(completed.state, "completed");
   assert.equal(completed.result.ok, true);
@@ -68,7 +68,7 @@ test("accepts a result only from the device and lease that received the action",
   }), /entrega ativa/);
 });
 
-test("keeps confirmation requirements for sensitive actions", () => {
+test("requires explicit confirmation for every action", () => {
   const envelope = createAndroidActionEnvelope({
     id: "action-02",
     capabilityId: "capability-01",
