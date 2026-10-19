@@ -62,7 +62,7 @@ function proposalMatchesUserMessage(action, message) {
       // Never trust a model-inferred package name. It must be present verbatim.
       return normalized.includes(String(action.packageName ?? "").toLowerCase());
     case "open_url": {
-      const suppliedUrls = raw.match(/https?:\\/\\/[^\\s<>"']+/gi) || [];
+      const suppliedUrls = raw.match(/https?:\/\/[^\s<>"']+/gi) || [];
       let proposed;
       try { proposed = new URL(action.url); } catch { return false; }
       return suppliedUrls.some((rawUrl) => {
@@ -77,21 +77,21 @@ function proposalMatchesUserMessage(action, message) {
       });
     }
     case "dial_number": {
-      const suppliedDigits = raw.replace(/\\D/g, "");
-      const proposedDigits = String(action.phoneNumber ?? "").replace(/\\D/g, "");
+      const suppliedDigits = raw.replace(/\D/g, "");
+      const proposedDigits = String(action.phoneNumber ?? "").replace(/\D/g, "");
       return proposedDigits.length >= 4 && suppliedDigits.includes(proposedDigits);
     }
     case "copy_text":
       return Boolean(action.text) && normalized.includes(normalizePortuguese(action.text));
     case "open_settings": {
       const settingTerms = {
-        wifi: /\\bwi ?fi\\b/,
-        bluetooth: /\\bbluetooth\\b/,
-        display: /\\b(tela|visor|brilho|display)\\b/,
-        sound: /\\b(som|volume|audio)\\b/,
-        accessibility: /\\b(acessibilidade)\\b/,
-        app_details: /\\b(detalhes do app|detalhes do aplicativo|informacoes do app)\\b/,
-        default_apps: /\\b(aplicativos padrao|apps padrao)\\b/,
+        wifi: /\bwi ?fi\b/,
+        bluetooth: /\bbluetooth\b/,
+        display: /\b(tela|visor|brilho|display)\b/,
+        sound: /\b(som|volume|audio)\b/,
+        accessibility: /\b(acessibilidade)\b/,
+        app_details: /\b(detalhes do app|detalhes do aplicativo|informacoes do app)\b/,
+        default_apps: /\b(aplicativos padrao|apps padrao)\b/,
       };
       return Boolean(settingTerms[action.setting]?.test(normalized));
     }
