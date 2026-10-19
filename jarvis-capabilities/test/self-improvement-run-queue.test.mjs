@@ -19,8 +19,18 @@ test("self-improvement queue persists jobs, enforces one active job, and claims 
   const firstId = "11111111-1111-4111-8111-111111111111";
   const secondId = "22222222-2222-4222-8222-222222222222";
   try {
-    await pool.query("CREATE TABLE IF NOT EXISTS jarvis_capabilities (id TEXT PRIMARY KEY)");
-    await pool.query("INSERT INTO jarvis_capabilities (id) VALUES ($1) ON CONFLICT (id) DO NOTHING", [capabilityId]);
+    await pool.query(`CREATE TABLE IF NOT EXISTS jarvis_capabilities (
+      id TEXT PRIMARY KEY,
+      goal TEXT NOT NULL DEFAULT 'integration test capability',
+      state TEXT NOT NULL DEFAULT 'researching' CHECK (state IN ('requested', 'researching', 'prepared', 'testing', 'validated', 'blocked')),
+      record JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await pool.query(
+      "INSERT INTO jarvis_capabilities (id, goal, state, record) VALUES ($1, $2, 'researching', '{}'::jsonb) ON CONFLICT (id) DO NOTHING",
+      [capabilityId, "integration test capability"],
+    );
     await initializeSelfImprovementRunQueue(pool);
     await pool.query("DELETE FROM jarvis_self_improvement_runs WHERE capability_id = $1", [capabilityId]);
 
