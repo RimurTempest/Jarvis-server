@@ -12,6 +12,9 @@ import { proposeAndroidAction } from "./jarvis-capabilities/android-action-propo
 import { registerAndroidActionRoutes } from "./jarvis-capabilities/android-action-routes.mjs";
 import { registerAndroidPairingPage } from "./jarvis-capabilities/android-pairing-page.mjs";
 import { buildCapabilityPromptContext } from "./jarvis-capabilities/capability-prompt-context.mjs";
+import { prepareSelfImprovementDraft } from "./jarvis-capabilities/self-improvement-pipeline.mjs";
+import { initializeSelfImprovementRunQueue, enqueueSelfImprovementRun, updateSelfImprovementRun, listSelfImprovementRuns } from "./jarvis-capabilities/self-improvement-run-queue.mjs";
+import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improvement-worker.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -290,6 +293,76 @@ function formatSourceList(webSearch) {
     .join("\n");
 }
 
+function selfImprovementPipelineEnabled() {
+  const token = process.env.JARVIS_GITHUB_TOKEN;
+  const repository = process.env.JARVIS_GITHUB_REPOSITORY;
+  const baseBranch = process.env.JARVIS_GITHUB_BASE_BRANCH || "main";
+  return process.env.JARVIS_SELF_IMPROVEMENT_ENABLED === "true" &&
+    Boolean(pool) &&
+    providers.length > 0 &&
+    Boolean(process.env.EXA_API_KEY) &&
+    typeof token === "string" && token.trim().length >= 20 &&
+    typeof repository === "string" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) &&
+    typeof baseBranch === "string" && baseBranch.length <= 100 &&
+    /^[A-Za-z0-9._/-]+$/.test(baseBranch) && !baseBranch.includes("..");
+}
+
+async function processSelfImprovementRun(run) {
+  const selected = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [run.capability_id]);
+  if (!selected.rowCount) {
+    await updateSelfImprovementRun(pool, run.id, "failed", { errorCode: "capability_missing" });
+    return;
+  }
+
+  const capability = selected.rows[0].record;
+  const result = await prepareSelfImprovementDraft({
+    capability,
+    provider: providers[0],
+    githubToken: process.env.JARVIS_GITHUB_TOKEN,
+    repository: run.repository,
+    baseBranch: run.base_branch,
+    searchResearch: async (goal) => searchWeb(
+      `Pesquise documentação oficial, APIs, permissões e limitações para implementar com segurança esta capacidade: ${goal}`
+    ),
+    onStage: async (stage) => {
+      // Final state requires the PR metadata and digest produced after publishing.
+      if (stage === "draft_pr_created") return;
+      await updateSelfImprovementRun(pool, run.id, stage);
+    },
+  });
+
+  await updateSelfImprovementRun(pool, run.id, "draft_pr_created", {
+    baseRevision: result.baseRevision,
+    proposalDigest: result.proposalDigest,
+    pullRequestNumber: result.pullRequest.number,
+    pullRequestUrl: result.pullRequest.url,
+    proposalSummary: result.summary,
+  });
+  await recordLearningEvent("self_improvement_draft_created", result.summary, {
+    capabilityId: run.capability_id,
+    runId: run.id,
+    pullRequestNumber: result.pullRequest.number,
+    pullRequestUrl: result.pullRequest.url,
+    baseRevision: result.baseRevision,
+    proposalDigest: result.proposalDigest,
+    requiresHumanReview: result.requiresHumanReview,
+  });
+}
+
+async function handleSelfImprovementRunFailure(run, error) {
+  try {
+    const current = await pool.query("SELECT state FROM jarvis_self_improvement_runs WHERE id = $1", [run.id]);
+    const state = current.rows[0]?.state;
+    if (state && !["draft_pr_created", "failed"].includes(state)) {
+      await updateSelfImprovementRun(pool, run.id, "failed", { errorCode: "pipeline_failed" });
+    }
+  } catch {
+    // Do not leak provider or repository response details through the worker.
+  }
+  const errorName = typeof error?.name === "string" ? error.name.slice(0, 80) : "Error";
+  console.error(`Execução de autoaperfeiçoamento interrompida (${errorName}); nenhuma implantação foi feita.`);
+}
+
 async function initializeDatabase() {
   if (!pool) throw new Error("DATABASE_URL não está configurada.");
   if (databaseInitialization) return databaseInitialization;
@@ -333,6 +406,7 @@ async function initializeDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_capabilities_state_updated ON jarvis_capabilities (state, updated_at DESC)`);
+    await initializeSelfImprovementRunQueue(pool);
     await initializeActionQueue(pool);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_learning_events_type ON jarvis_learning_events (event_type, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_messages_created ON jarvis_messages (created_at DESC, id DESC)`);
@@ -722,6 +796,78 @@ app.get("/api/capabilities", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
+  const id = typeof req.params.id === "string" ? req.params.id : "";
+  if (!id || id.length > 100) return res.status(400).json({ error: "ID de capacidade inválido." });
+  try {
+    await initializeDatabase();
+    const result = await listSelfImprovementRuns(pool, id, 20);
+    return res.json({
+      proposals: result.map((run) => ({
+        id: run.id,
+        capabilityId: run.capability_id,
+        state: run.state,
+        repository: run.repository,
+        baseBranch: run.base_branch,
+        baseRevision: run.base_revision,
+        proposalDigest: run.proposal_digest,
+        pullRequestNumber: run.pull_request_number,
+        pullRequestUrl: run.pull_request_url,
+        summary: run.proposal_summary,
+        errorCode: run.error_code,
+        createdAt: run.created_at,
+        updatedAt: run.updated_at,
+      })),
+    });
+  } catch (error) {
+    console.error("Falha ao consultar propostas de autoaperfeiçoamento:", error?.name || "Error");
+    return res.status(503).json({ error: "Não foi possível consultar as propostas." });
+  }
+});
+
+app.post("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
+  const id = typeof req.params.id === "string" ? req.params.id : "";
+  if (!id || id.length > 100) return res.status(400).json({ error: "ID de capacidade inválido." });
+  if (!selfImprovementPipelineEnabled()) {
+    return res.status(503).json({ error: "O pipeline de autoaperfeiçoamento não está habilitado ou falta configuração. Nenhuma alteração foi publicada." });
+  }
+  try {
+    await initializeDatabase();
+    const capabilityResult = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [id]);
+    if (!capabilityResult.rowCount) return res.status(404).json({ error: "Capacidade não encontrada." });
+    const capability = capabilityResult.rows[0].record;
+    const run = await enqueueSelfImprovementRun(pool, {
+      id: randomUUID(),
+      capabilityId: id,
+      repository: process.env.JARVIS_GITHUB_REPOSITORY,
+      baseBranch: process.env.JARVIS_GITHUB_BASE_BRANCH || "main",
+    });
+    await recordLearningEvent("self_improvement_run_queued", capability.goal, {
+      capabilityId: id,
+      runId: run.id,
+      state: run.state,
+    });
+    return res.status(202).json({
+      run: {
+        id: run.id,
+        capabilityId: id,
+        state: run.state,
+        createdAt: run.created_at,
+      },
+      message: "Solicitação enfileirada. O J.A.R.V.I.S. pesquisará, preparará uma proposta isolada e abrirá apenas um pull request draft; não fará merge nem deploy.",
+    });
+  } catch (error) {
+    if (error?.code === "SELF_IMPROVEMENT_ALREADY_ACTIVE") {
+      return res.status(409).json({ error: "Já existe uma execução ativa para esta capacidade." });
+    }
+    if (error instanceof TypeError || error instanceof RangeError) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error("Falha ao enfileirar autoaperfeiçoamento:", error?.name || "Error");
+    return res.status(503).json({ error: "Não foi possível enfileirar a proposta com segurança." });
+  }
+});
+
 app.post("/api/capabilities", requireAuth, async (req, res) => {
   const goal = typeof req.body?.goal === "string" ? req.body.goal.trim() : "";
   if (!goal) return res.status(400).json({ error: "Informe a tarefa que deve ser aprendida em goal." });
@@ -932,19 +1078,43 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   }
 
   const capabilityAlreadyReusable = Boolean(activeCapability && capabilityCanBeReused(activeCapability));
+  if (capabilityLearningRequest && activeCapability && !capabilityAlreadyReusable) {
+    if (selfImprovementPipelineEnabled()) {
+      try {
+        const queuedRun = await enqueueSelfImprovementRun(pool, {
+          id: randomUUID(),
+          capabilityId: activeCapability.id,
+          repository: process.env.JARVIS_GITHUB_REPOSITORY,
+          baseBranch: process.env.JARVIS_GITHUB_BASE_BRANCH || "main",
+        });
+        capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: a solicitação foi colocada na fila com o ID ${queuedRun.id}. O processo pesquisará, criará uma proposta em branch isolada e abrirá um pull request draft. Não afirme que o código foi implementado, testado, instalado ou implantado antes de evidência independente.`;
+      } catch (error) {
+        if (error?.code === "SELF_IMPROVEMENT_ALREADY_ACTIVE") {
+          capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade. Não crie outra nem afirme que terminou.";
+        } else {
+          console.error("Falha ao enfileirar solicitação de capacidade:", error?.name || "Error");
+          capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Informe que a solicitação foi registrada/pesquisada, mas não prometa alteração de código.";
+        }
+      }
+    } else {
+      capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: a configuração segura de geração/publicação não está completa. Você pode pesquisar e planejar, mas não afirme que vai implementar, gerar uma versão ou publicar uma atualização.";
+    }
+  }
   // A tool call is only a proposal. The strict allowlist, target-device binding,
   // short expiry, and explicit confirmation in Android remain mandatory.
   let proposedAndroidAction = null;
-  try {
-    proposedAndroidAction = await proposeAndroidAction(providers[0], message);
-  } catch {
-    console.warn("Classificação de ação Android indisponível; tentando o provedor alternativo.");
-  }
-  if (!proposedAndroidAction && providers.length > 1) {
+  if (!capabilityLearningRequest) {
     try {
-      proposedAndroidAction = await proposeAndroidAction(providers[1], message);
+      proposedAndroidAction = await proposeAndroidAction(providers[0], message);
     } catch {
-      // The normal conversational response remains available if action parsing fails.
+      console.warn("Classificação de ação Android indisponível; tentando o provedor alternativo.");
+    }
+    if (!proposedAndroidAction && providers.length > 1) {
+      try {
+        proposedAndroidAction = await proposeAndroidAction(providers[1], message);
+      } catch {
+        // The normal conversational response remains available if action parsing fails.
+      }
     }
   }
 
@@ -1094,14 +1264,29 @@ app.use((error, _req, res, _next) => {
   return res.status(500).json({ error: "Erro interno do servidor." });
 });
 
+let selfImprovementWorker = null;
+
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`JARVIS online na porta ${PORT}`);
 });
+if (selfImprovementPipelineEnabled()) {
+  void initializeDatabase().then(() => {
+    selfImprovementWorker = startSelfImprovementWorker({
+      pool,
+      processRun: processSelfImprovementRun,
+      onFailure: handleSelfImprovementRunFailure,
+      onWorkerError: (error) => console.error(`Worker de autoaperfeiçoamento indisponível (${error?.name || "Error"}).`),
+    });
+  }).catch((error) => {
+    console.error(`Worker de autoaperfeiçoamento não iniciou (${error?.name || "Error"}).`);
+  });
+}
 server.requestTimeout = 60000;
 server.headersTimeout = 65000;
 
 async function shutdown(signal) {
   console.log(`Recebido ${signal}; encerrando JARVIS...`);
+  selfImprovementWorker?.stop();
   server.close(async () => {
     if (pool) {
       try { await pool.end(); }
