@@ -971,6 +971,46 @@ app.get("/api/learning", requireAuth, async (_req, res) => {
   }
 });
 
+app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => {
+  const rawLimit = req.query.limit;
+  const limit = rawLimit === undefined ? 20 : Number(rawLimit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    return res.status(400).json({ error: "O limite deve ser um inteiro entre 1 e 50." });
+  }
+  try {
+    await initializeDatabase();
+    const result = await pool.query(
+      `SELECT run.id, run.capability_id AS "capabilityId", capability.goal,
+              run.target, run.state, run.repository,
+              run.pull_request_number AS "pullRequestNumber",
+              run.pull_request_url AS "pullRequestUrl",
+              run.proposal_summary AS "summary",
+              run.error_code AS "errorCode",
+              run.created_at AS "createdAt", run.updated_at AS "updatedAt"
+       FROM jarvis_self_improvement_runs AS run
+       LEFT JOIN jarvis_capabilities AS capability ON capability.id = run.capability_id
+       WHERE run.created_at >= NOW() - INTERVAL '30 days'
+       ORDER BY run.updated_at DESC, run.created_at DESC
+       LIMIT $1`,
+      [limit],
+    );
+    return res.json({
+      service: "JARVIS",
+      notifications: result.rows.map((row) => ({
+        ...row,
+        notificationType: row.state === "draft_pr_created"
+          ? "proposal_ready_for_review"
+          : row.state === "failed"
+            ? "proposal_failed"
+            : "proposal_progress",
+      })),
+    });
+  } catch (error) {
+    console.error("Falha ao consultar notificações de autoaperfeiçoamento:", error?.name || "Error");
+    return res.status(503).json({ error: "Não foi possível consultar o status das novas habilidades." });
+  }
+});
+
 app.post("/api/chat", requireAuth, async (req, res) => {
   const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
   if (!message) return res.status(400).json({ error: "A mensagem não pode estar vazia." });
