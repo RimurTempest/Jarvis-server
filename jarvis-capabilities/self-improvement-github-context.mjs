@@ -121,7 +121,7 @@ export async function fetchSelfImprovementRepositoryContext({
     const contentResponse = await request(
       fetchImpl,
       token,
-      `${repoPath}/contents/${encodePath(entry.path)}?ref=${encodeURIComponent(baseBranch)}`,
+      `${repoPath}/contents/${encodePath(entry.path)}?ref=${encodeURIComponent(baseRevision)}`,
     );
     if (contentResponse?.encoding !== "base64" || typeof contentResponse.content !== "string") {
       throw new Error(`GitHub não retornou conteúdo base64 válido para ${entry.path}.`);
