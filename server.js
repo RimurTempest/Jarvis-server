@@ -6,6 +6,7 @@ import { SYSTEM_PROMPT } from "./behavior.js";
 import { randomUUID } from "node:crypto";
 import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
+import { classifyCapabilityIntent } from "./jarvis-capabilities/capability-intent-classifier.mjs";
 import { enqueueAndroidAction, initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
 import { initializeAndroidDeviceRegistry } from "./jarvis-capabilities/android-device-registry.mjs";
 import { proposeAndroidAction } from "./jarvis-capabilities/android-action-proposal.mjs";
@@ -1136,9 +1137,40 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     }
   }
 
+  // A classificação semântica usa o histórico anterior à mensagem atual para
+  // reconhecer pedidos naturais e continuações de uma intenção já expressa.
+  let priorConversation = [];
+  let recentCapabilities = [];
+  try {
+    priorConversation = await getRecentMessages(10);
+  } catch (error) {
+    console.error("Falha ao recuperar contexto para classificar intenção:", error?.name || "Error");
+  }
+  try {
+    const recent = await pool.query(
+      "SELECT goal, state FROM jarvis_capabilities WHERE state IN ('requested', 'researching', 'prepared', 'testing', 'validated') ORDER BY updated_at DESC LIMIT 8"
+    );
+    recentCapabilities = recent.rows;
+  } catch (error) {
+    console.error("Falha ao recuperar capacidades recentes para classificar intenção:", error?.name || "Error");
+  }
+
+  let semanticCapabilityIntent = null;
+  if (providers[0]) {
+    semanticCapabilityIntent = await classifyCapabilityIntent({
+      provider: providers[0],
+      message,
+      history: priorConversation,
+      activeCapabilities: recentCapabilities,
+    });
+  }
   const detectedLearningRequest = detectCapabilityLearningRequest(message);
-  const capabilityLearningRequest = detectedLearningRequest && !looksSensitive(detectedLearningRequest.goal)
-    ? detectedLearningRequest
+  const semanticLearningRequest = semanticCapabilityIntent?.intent === "create_capability"
+    ? { goal: semanticCapabilityIntent.goal, originalRequest: message }
+    : null;
+  const capabilityLearningRequest = (semanticLearningRequest || detectedLearningRequest) &&
+    !looksSensitive((semanticLearningRequest || detectedLearningRequest).goal)
+    ? (semanticLearningRequest || detectedLearningRequest)
     : null;
 
   let userMessageId = null;
@@ -1235,17 +1267,13 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   }
 
   let memories = [];
-  let history = [];
+  // O histórico já foi recuperado antes de salvar a mensagem atual para que o
+  // classificador consiga interpretar continuações sem confundir a fala atual com contexto anterior.
+  let history = priorConversation.slice(-(MAX_HISTORY_MESSAGES - 1));
   try {
     memories = await retrieveRelevantMemories(message);
   } catch (error) {
     console.error("Falha ao recuperar memórias relevantes:", error.message);
-  }
-  try {
-    // Reservamos uma posição para acrescentar a mensagem atual explicitamente.
-    history = await getRecentMessages(MAX_HISTORY_MESSAGES - 1, userMessageId);
-  } catch (error) {
-    console.error("Falha ao recuperar histórico anterior:", error.message);
   }
 
   const capabilityAlreadyReusable = Boolean(activeCapability && capabilityCanBeReused(activeCapability));
