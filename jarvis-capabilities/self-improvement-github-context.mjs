@@ -24,7 +24,7 @@ function encodePath(value) {
 }
 
 function isSensitivePath(path) {
-  return /(^|\/)\.env(?:\.[^/]*)?$|(^|\/)\.git(\/|$)|(^|\/)node_modules(\/|$)|(^|\/)(?:secrets?|credentials?)(\/|$)|(^|\/)(?:id_rsa|id_ed25519)(?:\.[^/]*)?$|(^|\/)(?:\.npmrc|\.pypirc)$|\.(?:pem|key|p12|pfx|jks|keystore|mobileprovision)$/i.test(path);
+  return /(^|\/)\.env(?:\.[^/]*)?$|(^|\/)\.git(\/|$)|(^|\/)node_modules(\/|$)|(^|\/)\.gradle(\/|$)|(^|\/)build(\/|$)|(^|\/)\.idea(\/|$)|(^|\/)(?:secrets?|credentials?)(\/|$)|(^|\/)(?:id_rsa|id_ed25519)(?:\.[^/]*)?$|(^|\/)(?:\.npmrc|\.pypirc|local\.properties|signing\.properties)$|\.(?:pem|key|p12|pfx|jks|keystore|mobileprovision)$/i.test(path);
 }
 
 function supportedSourcePath(path) {
