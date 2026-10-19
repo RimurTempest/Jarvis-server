@@ -53,7 +53,7 @@ export async function classifyCapabilityIntent({ provider, message, history = []
       messages: [{ role: "system", content: system }, { role: "user", content: context }],
       response_format: { type: "json_object" },
       max_completion_tokens: 220,
-    }, { timeout: 8000, maxRetries: 0 });
+    }, { timeout: 5000, maxRetries: 0 });
     const raw = response?.choices?.[0]?.message?.content;
     if (typeof raw !== "string" || !raw.trim()) return null;
     return normalizeIntent(JSON.parse(raw));
