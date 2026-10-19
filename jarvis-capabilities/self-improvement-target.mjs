@@ -69,16 +69,23 @@ export function resolveSelfImprovementTarget(goal, env = process.env) {
  * malformed override is rejected rather than falling back to server checks.
  */
 export function requiredWorkflowsForRepository(repository, env = process.env) {
-  if (repository !== env.JARVIS_ANDROID_REPOSITORY) return null;
-  const raw = env.JARVIS_ANDROID_REQUIRED_WORKFLOWS || "JARVIS Android Build and Tests";
+  let raw;
+  if (repository === env.JARVIS_FULL_STACK_REPOSITORY) {
+    raw = env.JARVIS_FULL_STACK_REQUIRED_WORKFLOWS ||
+      "JARVIS Capability Tests,JARVIS Android Build and Tests";
+  } else if (repository === env.JARVIS_ANDROID_REPOSITORY) {
+    raw = env.JARVIS_ANDROID_REQUIRED_WORKFLOWS || "JARVIS Android Build and Tests";
+  } else {
+    return null;
+  }
   if (typeof raw !== "string" || raw.length > 1000) {
-    throw new TypeError("JARVIS_ANDROID_REQUIRED_WORKFLOWS inválido.");
+    throw new TypeError("Configuração de workflows obrigatórios inválida.");
   }
   const names = raw.split(",").map((name) => name.trim());
   if (names.length < 1 || names.length > 10 ||
       names.some((name) => !name || name.length > 120) ||
       new Set(names).size !== names.length) {
-    throw new TypeError("JARVIS_ANDROID_REQUIRED_WORKFLOWS deve listar de 1 a 10 nomes únicos.");
+    throw new TypeError("A configuração de workflows deve listar de 1 a 10 nomes únicos.");
   }
   return names;
 }
