@@ -51,7 +51,7 @@ test("generates and validates a proposal while binding trusted request ID and re
   assert.equal(result.proposal.baseRevision, revision);
   assert.equal(result.validation.ok, true);
   assert.match(result.validation.proposalDigest, /^[a-f0-9]{64}$/);
-  assert.equal(calls[0].options.timeout, 45_000);
+  assert.equal(calls[0].options.timeout, 120_000);
   assert.equal(calls[0].options.maxRetries, 0);
   assert.equal(calls[0].params.response_format.type, "json_object");
 });
