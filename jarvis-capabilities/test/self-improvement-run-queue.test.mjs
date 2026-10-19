@@ -67,7 +67,6 @@ test("queue validation rejects malformed identifiers and unsafe branches", async
   await assert.rejects(enqueueSelfImprovementRun(fakePool, {
     id: "11111111-1111-4111-8111-111111111111", capabilityId: "capability-1", repository: "example/repo", baseBranch: "../main",
   }), /baseBranch/i);
-  assert.throws(() => {}, undefined);
 });
 
 test("recovery window rejects invalid durations", async () => {
