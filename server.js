@@ -19,6 +19,7 @@ import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improveme
 import { inspectDraftPullRequestValidation, fetchSelfImprovementCiFailureDiagnostics } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
 import { runSelfImprovementCiRepairLoop } from "./jarvis-capabilities/self-improvement-ci-repair.mjs";
 import { mergeValidatedSelfImprovementDraft } from "./jarvis-capabilities/self-improvement-auto-activation.mjs";
+import { resolveRuntimeHealthUrl, verifyRuntimeRevision, revertMergedCommitSafely } from "./jarvis-capabilities/self-improvement-runtime-guard.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 
 const { Pool } = pg;
@@ -406,10 +407,24 @@ async function processSelfImprovementRun(run) {
   const finalDraft = result.draft;
   let finalState = "draft_pr_created";
   let mergeCommitSha = null;
+  let rollbackCommitSha = null;
+  let runtimeVerificationReason = null;
+  const runtimeHealthUrl = resolveRuntimeHealthUrl();
   const autoMergeEnabled = process.env.JARVIS_SELF_IMPROVEMENT_AUTO_MERGE === "true" &&
     run.target === "server" &&
+    Boolean(runtimeHealthUrl) &&
     typeof process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN === "string" &&
     process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN.trim().length >= 20;
+
+  const runMetadata = {
+    baseRevision: finalDraft.baseRevision,
+    headRevision: finalDraft.pullRequest.commitSha,
+    proposalDigest: finalDraft.proposalDigest,
+    pullRequestNumber: finalDraft.pullRequest.number,
+    pullRequestUrl: finalDraft.pullRequest.url,
+    proposalSummary: finalDraft.summary,
+  };
+
   if (autoMergeEnabled) {
     try {
       const mergeResult = await mergeValidatedSelfImprovementDraft({
@@ -430,8 +445,55 @@ async function processSelfImprovementRun(run) {
         changedPaths: finalDraft.changedPaths,
       });
       if (mergeResult.merged === true) {
-        finalState = "merged";
         mergeCommitSha = mergeResult.mergeCommitSha;
+        finalState = "merged";
+        await updateSelfImprovementRun(pool, run.id, "merged", runMetadata);
+        await recordLearningEvent(
+          "self_improvement_merged",
+          "Uma proposta de baixo risco foi mesclada após validação CI independente; verificando a revisão implantada em produção.",
+          { capabilityId: run.capability_id, runId: run.id, pullRequestNumber: finalDraft.pullRequest.number, mergeCommitSha },
+        );
+
+        let runtimeResult = { verified: false, reason: "runtime_verification_failed" };
+        try {
+          runtimeResult = await verifyRuntimeRevision({
+            healthUrl: runtimeHealthUrl,
+            expectedRevision: mergeCommitSha,
+          });
+        } catch {
+          runtimeResult = { verified: false, reason: "runtime_verification_error" };
+        }
+
+        if (runtimeResult.verified) {
+          finalState = "runtime_verified";
+        } else {
+          runtimeVerificationReason = runtimeResult.reason || "runtime_revision_not_healthy";
+          try {
+            const rollbackResult = await revertMergedCommitSafely({
+              token: process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN,
+              repository: run.repository,
+              baseBranch: run.base_branch,
+              mergeCommitSha,
+            });
+            if (rollbackResult.rolledBack === true) {
+              rollbackCommitSha = rollbackResult.revertCommitSha;
+              const rollbackHealth = await verifyRuntimeRevision({
+                healthUrl: runtimeHealthUrl,
+                expectedRevision: rollbackCommitSha,
+                maxPolls: 12,
+                intervalMs: 10000,
+              });
+              finalState = rollbackHealth.verified ? "rolled_back" : "merge_unverified";
+              if (!rollbackHealth.verified) runtimeVerificationReason = rollbackHealth.reason || "rollback_runtime_not_verified";
+            } else {
+              finalState = "merge_unverified";
+              runtimeVerificationReason = rollbackResult.reason || "rollback_not_completed";
+            }
+          } catch (error) {
+            finalState = "merge_unverified";
+            runtimeVerificationReason = "rollback_error_" + (error?.name || "Error").slice(0, 60);
+          }
+        }
       }
     } catch (error) {
       console.error("Auto-merge recusado após validação independente (" + (error?.name || "Error") + "). A proposta permanecerá para revisão.");
@@ -443,33 +505,52 @@ async function processSelfImprovementRun(run) {
     }
   }
 
-  await updateSelfImprovementRun(pool, run.id, finalState, {
-    baseRevision: finalDraft.baseRevision,
-    headRevision: finalDraft.pullRequest.commitSha,
-    proposalDigest: finalDraft.proposalDigest,
+  if (finalState !== "draft_pr_created") {
+    await updateSelfImprovementRun(pool, run.id, finalState, runMetadata);
+  } else {
+    await updateSelfImprovementRun(pool, run.id, "draft_pr_created", runMetadata);
+  }
+
+  const terminalEvents = {
+    runtime_verified: {
+      type: "self_improvement_runtime_verified",
+      summary: "A nova revisão foi implantada e respondeu saudável com o SHA esperado.",
+    },
+    rolled_back: {
+      type: "self_improvement_rolled_back",
+      summary: "A revisão nova falhou na verificação; o rollback foi implantado e confirmado saudável.",
+    },
+    merge_unverified: {
+      type: "self_improvement_merge_unverified",
+      summary: "A implantação ou a recuperação não pôde ser confirmada; o JARVIS não afirma que a versão está saudável.",
+    },
+    merged: {
+      type: "self_improvement_merged",
+      summary: "A proposta foi mesclada, mas a verificação de runtime ainda não foi concluída.",
+    },
+    draft_pr_created: {
+      type: "self_improvement_draft_created",
+      summary: finalDraft.summary,
+    },
+  };
+  const terminalEvent = terminalEvents[finalState] || terminalEvents.draft_pr_created;
+  await recordLearningEvent(terminalEvent.type, terminalEvent.summary, {
+    capabilityId: run.capability_id,
+    runId: run.id,
     pullRequestNumber: finalDraft.pullRequest.number,
     pullRequestUrl: finalDraft.pullRequest.url,
-    proposalSummary: finalDraft.summary,
+    baseRevision: finalDraft.baseRevision,
+    proposalDigest: finalDraft.proposalDigest,
+    requiresHumanReview: finalDraft.requiresHumanReview,
+    repairAttempts: result.repairAttempts,
+    ciValidated: result.validation.ready === true,
+    mergeCommitSha,
+    rollbackCommitSha,
+    runtimeVerificationReason,
+    productionDeploymentVerified: finalState === "runtime_verified",
+    rollbackVerified: finalState === "rolled_back",
   });
-  await recordLearningEvent(
-    finalState === "merged" ? "self_improvement_merged" : "self_improvement_draft_created",
-    finalState === "merged"
-      ? "Uma proposta de baixo risco foi mesclada após validação CI independente; o deploy em produção ainda não foi confirmado."
-      : finalDraft.summary,
-    {
-      capabilityId: run.capability_id,
-      runId: run.id,
-      pullRequestNumber: finalDraft.pullRequest.number,
-      pullRequestUrl: finalDraft.pullRequest.url,
-      baseRevision: finalDraft.baseRevision,
-      proposalDigest: finalDraft.proposalDigest,
-      requiresHumanReview: finalDraft.requiresHumanReview,
-      repairAttempts: result.repairAttempts,
-      ciValidated: result.validation.ready === true,
-      mergeCommitSha,
-      productionDeploymentVerified: false,
-    },
-  );
+
 }
 
 async function handleSelfImprovementRunFailure(run, error) {
