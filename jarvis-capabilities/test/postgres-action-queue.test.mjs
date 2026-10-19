@@ -57,6 +57,7 @@ test("initializes the queue table and indexes", async () => {
   await initializeActionQueue(pool);
   assert.ok(pool.calls.some((call) => call.sql.includes("CREATE TABLE IF NOT EXISTS jarvis_action_queue")));
   assert.ok(pool.calls.some((call) => call.sql.includes("UPDATE jarvis_action_queue") && call.sql.includes("target_device_id IS NULL") && call.sql.includes("state = 'expired'")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("target_device_id = 'legacy-unassigned'")));
   assert.ok(pool.calls.some((call) => call.sql.includes("ALTER TABLE jarvis_action_queue ALTER COLUMN target_device_id SET NOT NULL")));
   assert.ok(pool.calls.some((call) => call.sql.includes("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE")));
   assert.ok(pool.calls.some((call) => call.sql.includes("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE")));
