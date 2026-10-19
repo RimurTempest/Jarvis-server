@@ -459,6 +459,7 @@ async function processSelfImprovementRun(run) {
           runtimeResult = await verifyRuntimeRevision({
             healthUrl: runtimeHealthUrl,
             expectedRevision: mergeCommitSha,
+            intervalMs: 5000,
           });
         } catch {
           runtimeResult = { verified: false, reason: "runtime_verification_error" };
@@ -481,7 +482,7 @@ async function processSelfImprovementRun(run) {
                 healthUrl: runtimeHealthUrl,
                 expectedRevision: rollbackCommitSha,
                 maxPolls: 12,
-                intervalMs: 10000,
+                intervalMs: 5000,
               });
               finalState = rollbackHealth.verified ? "rolled_back" : "merge_unverified";
               if (!rollbackHealth.verified) runtimeVerificationReason = rollbackHealth.reason || "rollback_runtime_not_verified";
