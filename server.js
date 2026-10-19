@@ -433,6 +433,7 @@ async function handleSelfImprovementRunFailure(run, error) {
         "ci_validation_timeout",
         "ci_repair_stale_revision",
         "ci_repair_invalid_draft",
+        "ci_validation_not_repairable",
       ]);
       const errorCode = safeCodes.has(error?.code) ? error.code : "pipeline_failed";
       await updateSelfImprovementRun(pool, run.id, "failed", { errorCode });
