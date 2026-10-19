@@ -913,6 +913,7 @@ app.get("/health", async (_req, res) => {
   res.status(healthy ? 200 : 503).json({
     status: healthy ? "ok" : "degraded",
     service: "JARVIS",
+    revision: process.env.RENDER_GIT_COMMIT || process.env.GITHUB_SHA || null,
     database,
     aiProviders: providers.length,
     webSearchConfigured: Boolean(process.env.EXA_API_KEY),
