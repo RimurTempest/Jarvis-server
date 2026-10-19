@@ -14,7 +14,7 @@ const TRANSITIONS = Object.freeze({
   researching: new Set(["researching", "collecting_context", "failed"]),
   collecting_context: new Set(["collecting_context", "generating", "failed"]),
   generating: new Set(["generating", "publishing", "failed"]),
-  publishing: new Set(["publishing", "draft_pr_created", "failed"]),
+  publishing: new Set(["publishing", "researching", "draft_pr_created", "failed"]),
   draft_pr_created: new Set(),
   failed: new Set(["queued"]),
 });
