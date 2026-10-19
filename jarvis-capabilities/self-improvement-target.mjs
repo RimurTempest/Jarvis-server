@@ -52,3 +52,22 @@ export function resolveSelfImprovementTarget(goal, env = process.env) {
   }
   return { available: true, target, repository, baseBranch, reason: null };
 }
+
+/**
+ * Android repositories use their own build/test workflow names. An empty or
+ * malformed override is rejected rather than falling back to server checks.
+ */
+export function requiredWorkflowsForRepository(repository, env = process.env) {
+  if (repository !== env.JARVIS_ANDROID_REPOSITORY) return null;
+  const raw = env.JARVIS_ANDROID_REQUIRED_WORKFLOWS || "JARVIS Android Build and Tests";
+  if (typeof raw !== "string" || raw.length > 1000) {
+    throw new TypeError("JARVIS_ANDROID_REQUIRED_WORKFLOWS inválido.");
+  }
+  const names = raw.split(",").map((name) => name.trim());
+  if (names.length < 1 || names.length > 10 ||
+      names.some((name) => !name || name.length > 120) ||
+      new Set(names).size !== names.length) {
+    throw new TypeError("JARVIS_ANDROID_REQUIRED_WORKFLOWS deve listar de 1 a 10 nomes únicos.");
+  }
+  return names;
+}
