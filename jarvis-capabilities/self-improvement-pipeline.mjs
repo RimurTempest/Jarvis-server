@@ -48,6 +48,7 @@ export async function prepareSelfImprovementDraft({
   capability,
   provider,
   fallbackProviders = [],
+  validationFeedback = "",
   githubToken,
   repository,
   baseBranch,
@@ -107,6 +108,7 @@ export async function prepareSelfImprovementDraft({
         research,
         contextFiles: context.contextFiles,
         riskLevel: "standard",
+        validationFeedback,
       });
       if (!attempt?.validation?.ok || !attempt?.proposal || !attempt?.summary) {
         throw new Error("A proposta não passou pela política de segurança.");
