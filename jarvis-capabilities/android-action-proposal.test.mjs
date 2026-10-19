@@ -100,8 +100,15 @@ test("rejects package names and URLs invented by the model", async () => {
     }) } } }
   });
 
-  assert.equal(await proposeAndroidAction(providerFor({
+  assert.deepEqual(await proposeAndroidAction(providerFor({
     type: "open_app", packageName: "com.whatsapp",
+  }), "Jarvis, abra o WhatsApp"), {
+    type: "open_app",
+    packageName: "com.whatsapp",
+  });
+
+  assert.equal(await proposeAndroidAction(providerFor({
+    type: "open_app", packageName: "com.facebook.katana",
   }), "Jarvis, abra o WhatsApp"), null);
 
   assert.equal(await proposeAndroidAction(providerFor({
