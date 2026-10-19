@@ -39,7 +39,7 @@ export async function initializeActionQueue(pool) {
     state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'completed', 'failed', 'expired')),
     action JSONB NOT NULL,
     target_device_id TEXT NOT NULL,
-    requires_user_confirmation BOOLEAN NOT NULL DEFAULT FALSE,
+    requires_user_confirmation BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
     delivered_at TIMESTAMPTZ,
@@ -51,6 +51,8 @@ export async function initializeActionQueue(pool) {
     result JSONB
   )`);
   await pool.query("ALTER TABLE jarvis_action_queue ADD COLUMN IF NOT EXISTS target_device_id TEXT");
+  await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE");
+  await pool.query("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE WHERE state IN ('pending', 'delivered')");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_pending ON jarvis_action_queue (target_device_id, created_at, id) WHERE state = 'pending'");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_lease ON jarvis_action_queue (lease_expires_at) WHERE state = 'delivered'");
 }
