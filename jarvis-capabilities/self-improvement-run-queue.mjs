@@ -131,13 +131,18 @@ export async function recoverStaleSelfImprovementRuns(pool, staleAfterMinutes = 
   if (!Number.isInteger(staleAfterMinutes) || staleAfterMinutes < 1 || staleAfterMinutes > 120) {
     throw new TypeError("staleAfterMinutes deve estar entre 1 e 120.");
   }
+  const unresolvedMerges = await pool.query(`UPDATE jarvis_self_improvement_runs
+    SET state = 'merge_unverified', error_code = 'runtime_verification_interrupted', claimed_at = NULL, updated_at = NOW()
+    WHERE state = 'merged'
+      AND updated_at < NOW() - ($1::int * INTERVAL '1 minute')
+    RETURNING id`, [staleAfterMinutes]);
   const result = await pool.query(`UPDATE jarvis_self_improvement_runs
     SET state = 'queued', claimed_at = NULL, updated_at = NOW()
     WHERE state = ANY($1::text[])
       AND claimed_at IS NOT NULL
       AND claimed_at < NOW() - ($2::int * INTERVAL '1 minute')
     RETURNING id`, [ACTIVE_STATES.filter((state) => state !== "queued"), staleAfterMinutes]);
-  return result.rowCount;
+  return result.rowCount + unresolvedMerges.rowCount;
 }
 
 export async function updateSelfImprovementRun(pool, id, nextState, metadata = {}) {
