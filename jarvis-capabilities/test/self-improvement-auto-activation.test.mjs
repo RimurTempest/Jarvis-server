@@ -54,18 +54,14 @@ test("keeps protected paths draft-only", async () => {
 });
 
 test("refuses a stale or non-draft PR before any merge call", async () => {
-  const mock = mockFetch([{
-    payload: { state: "open", draft: true, base: { ref: "main" }, head: { sha: "b".repeat(40) } } },
-  }]);
+  const mock = mockFetch([{ payload: { state: "open", draft: true, base: { ref: "main" }, head: { sha: "b".repeat(40) } } }]);
   const result = await mergeValidatedSelfImprovementDraft({ ...base, fetchImpl: mock.fetchImpl });
   assert.deepEqual(result, { merged: false, reason: "stale_or_non_draft_pr" });
   assert.equal(mock.calls.length, 1);
 });
 
 test("rechecks current CI immediately before merging", async () => {
-  const mock = mockFetch([
-    { payload: { state: "open", draft: true, base: { ref: "main" }, head: { sha: "a".repeat(40) } } },
-  ]);
+  const mock = mockFetch([{ payload: { state: "open", draft: true, base: { ref: "main" }, head: { sha: "a".repeat(40) } } }]);
   const result = await mergeValidatedSelfImprovementDraft({
     ...base,
     fetchImpl: mock.fetchImpl,
