@@ -77,9 +77,13 @@ function proposalMatchesUserMessage(action, message) {
       });
     }
     case "dial_number": {
-      const suppliedDigits = raw.replace(/\D/g, "");
+      // Match one complete number supplied by the user; do not accept a shorter
+      // suffix or silently drop a country/area code suggested by the model.
+      const suppliedNumbers = raw.match(/\+?\d[\d ()-]{2,35}\d/g) || [];
       const proposedDigits = String(action.phoneNumber ?? "").replace(/\D/g, "");
-      return proposedDigits.length >= 4 && suppliedDigits.includes(proposedDigits);
+      return suppliedNumbers.some((number) =>
+        number.replace(/\D/g, "") === proposedDigits
+      );
     }
     case "copy_text":
       return Boolean(action.text) && normalized.includes(normalizePortuguese(action.text));
@@ -131,7 +135,8 @@ export async function proposeAndroidAction(provider, message) {
     tool_choice: "auto",
     parallel_tool_calls: false,
     max_completion_tokens: 250,
-    stream: false
+    stream: false,
+    timeout: 8000
   });
 
   const calls = completion?.choices?.[0]?.message?.tool_calls;
