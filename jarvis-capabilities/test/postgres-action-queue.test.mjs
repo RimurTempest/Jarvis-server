@@ -66,15 +66,19 @@ test("enqueues only structured allowlisted action data", async () => {
     id: "action-01",
     capabilityId: "capability-01",
     action: { type: "copy_text", text: "hello" },
+    targetDeviceId: "android-primary",
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   });
   assert.equal(result.state, "pending");
   assert.equal(result.action.text, "hello");
+  assert.equal(result.targetDeviceId, "android-primary");
+  assert.equal(result.requiresUserConfirmation, true);
   assert.equal(pool.calls.length, 1);
   await assert.rejects(() => enqueueAndroidAction(pool, {
     id: "action-02",
     capabilityId: "capability-01",
     action: { type: "shell", command: "dangerous" },
+    targetDeviceId: "android-primary",
   }), /não permitido/);
 });
 
@@ -94,6 +98,7 @@ test("claims pending actions in a transaction and returns a lease token", async 
   assert.equal(claimed.delivery.deviceId, "android-primary");
   assert.equal(typeof claimed.delivery.leaseToken, "string");
   assert.ok(pool.calls.some((call) => call.sql === "BEGIN"));
+  assert.ok(pool.calls.some((call) => call.sql.includes("target_device_id = $2") && call.params[1] === "android-primary"));
   assert.ok(pool.calls.some((call) => call.sql.includes("LIMIT 1 FOR UPDATE SKIP LOCKED")));
   assert.ok(pool.calls.some((call) => call.sql === "COMMIT"));
 });
