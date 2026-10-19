@@ -19,7 +19,7 @@ import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improveme
 import { inspectDraftPullRequestValidation, fetchSelfImprovementCiFailureDiagnostics } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
 import { runSelfImprovementCiRepairLoop } from "./jarvis-capabilities/self-improvement-ci-repair.mjs";
 import { mergeValidatedSelfImprovementDraft } from "./jarvis-capabilities/self-improvement-auto-activation.mjs";
-import { resolveRuntimeHealthUrl, verifyRuntimeRevision, revertMergedCommitSafely } from "./jarvis-capabilities/self-improvement-runtime-guard.mjs";
+import { resolveRuntimeHealthUrl, verifyRuntimeRevision, revertMergedCommitSafely, isSelfImprovementAutoMergeConfigured } from "./jarvis-capabilities/self-improvement-runtime-guard.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 
 const { Pool } = pg;
@@ -410,17 +410,13 @@ async function processSelfImprovementRun(run) {
   let rollbackCommitSha = null;
   let runtimeVerificationReason = null;
   const runtimeHealthUrl = resolveRuntimeHealthUrl();
-  const renderRepositoryMatches = typeof process.env.RENDER_GIT_REPO_SLUG === "string" &&
-    process.env.RENDER_GIT_REPO_SLUG.toLowerCase() === String(run.repository).toLowerCase();
-  const renderBranchMatches = typeof process.env.RENDER_GIT_BRANCH === "string" &&
-    process.env.RENDER_GIT_BRANCH === run.base_branch;
-  const autoMergeEnabled = process.env.JARVIS_SELF_IMPROVEMENT_AUTO_MERGE === "true" &&
-    run.target === "server" &&
-    renderRepositoryMatches &&
-    renderBranchMatches &&
-    Boolean(runtimeHealthUrl) &&
-    typeof process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN === "string" &&
-    process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN.trim().length >= 20;
+  const autoMergeEnabled = isSelfImprovementAutoMergeConfigured({
+    env: process.env,
+    target: run.target,
+    repository: run.repository,
+    baseBranch: run.base_branch,
+    runtimeHealthUrl,
+  });
 
   const runMetadata = {
     baseRevision: finalDraft.baseRevision,
