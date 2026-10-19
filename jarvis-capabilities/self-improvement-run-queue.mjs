@@ -6,6 +6,9 @@ const RUN_STATES = Object.freeze([
   "publishing",
   "draft_pr_created",
   "merged",
+  "runtime_verified",
+  "rolled_back",
+  "merge_unverified",
   "failed",
 ]);
 const ACTIVE_STATES = ["queued", "researching", "collecting_context", "generating", "publishing"];
@@ -17,7 +20,10 @@ const TRANSITIONS = Object.freeze({
   generating: new Set(["generating", "publishing", "failed"]),
   publishing: new Set(["publishing", "researching", "draft_pr_created", "merged", "failed"]),
   draft_pr_created: new Set(),
-  merged: new Set(),
+  merged: new Set(["runtime_verified", "rolled_back", "merge_unverified"]),
+  runtime_verified: new Set(),
+  rolled_back: new Set(),
+  merge_unverified: new Set(),
   failed: new Set(["queued"]),
 });
 
@@ -50,7 +56,7 @@ export async function initializeSelfImprovementRunQueue(pool) {
     id UUID PRIMARY KEY,
     capability_id TEXT NOT NULL REFERENCES jarvis_capabilities(id) ON DELETE CASCADE,
     target TEXT NOT NULL DEFAULT 'server',
-    state TEXT NOT NULL CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'merged', 'failed')),
+    state TEXT NOT NULL CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'merged', 'runtime_verified', 'rolled_back', 'merge_unverified', 'failed')),
     repository TEXT NOT NULL,
     base_branch TEXT NOT NULL,
     base_revision TEXT,
@@ -173,7 +179,7 @@ export async function updateSelfImprovementRun(pool, id, nextState, metadata = {
   const proposalSummary = metadata.proposalSummary === undefined ? null : nonEmpty(metadata.proposalSummary, "proposalSummary", 2000);
   const errorCode = metadata.errorCode === undefined ? null : nonEmpty(metadata.errorCode, "errorCode", 80);
 
-  if (nextState === "draft_pr_created" || nextState === "merged") {
+  if (["draft_pr_created", "merged", "runtime_verified", "rolled_back", "merge_unverified"].includes(nextState)) {
     if (!Number.isSafeInteger(pullRequestNumber) || !pullRequestUrl || !proposalDigest || !baseRevision || !headRevision) {
       throw new Error("Uma execução concluída exige PR, URL, digest e revisões base/head.");
     }
