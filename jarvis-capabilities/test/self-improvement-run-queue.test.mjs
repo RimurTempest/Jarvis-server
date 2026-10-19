@@ -222,7 +222,7 @@ test("persists verified runtime and rollback revisions for exact Android status 
     await enqueueSelfImprovementRun(pool, {
       id: verifiedRunId, capabilityId, repository: "example/repo", baseBranch: "main", target: "server",
     });
-    await claimNextSelfImprovementRun(pool);
+    await pool.query("UPDATE jarvis_self_improvement_runs SET state = 'researching', claimed_at = NOW() WHERE id = $1 AND state = 'queued'", [verifiedRunId]);
     await updateSelfImprovementRun(pool, verifiedRunId, "collecting_context");
     await updateSelfImprovementRun(pool, verifiedRunId, "generating");
     await updateSelfImprovementRun(pool, verifiedRunId, "publishing");
@@ -239,7 +239,7 @@ test("persists verified runtime and rollback revisions for exact Android status 
     await enqueueSelfImprovementRun(pool, {
       id: rolledBackRunId, capabilityId, repository: "example/repo", baseBranch: "main", target: "server",
     });
-    await claimNextSelfImprovementRun(pool);
+    await pool.query("UPDATE jarvis_self_improvement_runs SET state = 'researching', claimed_at = NOW() WHERE id = $1 AND state = 'queued'", [rolledBackRunId]);
     await updateSelfImprovementRun(pool, rolledBackRunId, "collecting_context");
     await updateSelfImprovementRun(pool, rolledBackRunId, "generating");
     await updateSelfImprovementRun(pool, rolledBackRunId, "publishing");
