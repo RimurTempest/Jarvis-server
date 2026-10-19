@@ -140,6 +140,7 @@ test("enables auto-merge only when every runtime safety gate matches", () => {
     JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN: "x".repeat(30),
     RENDER_GIT_REPO_SLUG: "RimurTempest/Jarvis-server",
     RENDER_GIT_BRANCH: "main",
+    RENDER_EXTERNAL_URL: "https://jarvis-server-odpk.onrender.com",
   };
   const valid = {
     env,
@@ -153,6 +154,8 @@ test("enables auto-merge only when every runtime safety gate matches", () => {
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, baseBranch: "release" }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, target: "android" }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, runtimeHealthUrl: "http://jarvis.example/health" }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, runtimeHealthUrl: "https://different-service.onrender.com/health" }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, runtimeHealthUrl: "https://jarvis-server-odpk.onrender.com/not-health" }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, env: { ...env, JARVIS_SELF_IMPROVEMENT_AUTO_MERGE: "false" } }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, env: { ...env, JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN: "short" } }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, env: { ...env, RENDER_GIT_BRANCH: "feature/test" } }), false);
