@@ -24,6 +24,6 @@ The policy marks changes outside `jarvis-capabilities/`, elevated/high-risk prop
 
 ## Explicit non-capabilities
 
-This policy module does **not** browse the web, generate code, write to GitHub, run arbitrary commands, create an APK, install software, merge pull requests, or deploy to Render. A valid proposal digest is an integrity identifier, not proof that the code is safe or correct. Those capabilities must be added as separate, least-privilege services with their own tests.
+The policy module does **not** browse the web, generate code, run arbitrary commands, create an APK, install software, merge pull requests, or deploy to Render. The separate `self-improvement-github-publisher.mjs` module can publish an already validated file proposal as a draft pull request using a narrowly scoped GitHub token. It verifies that the target base branch still points to the exact source revision before writing blobs, creates a dedicated proposal branch and commit, and always opens a draft PR. It never merges or deploys. A valid proposal digest is an integrity identifier, not proof that the code is safe or correct. The code-generation worker, trusted CI evidence collection, artifact packaging/signing, and installation workflow remain separate work.
 
 The eventual worker must never receive production deployment credentials. It should have permission to create a branch and draft pull request only; CI and an independent validation gate determine whether a proposal can be packaged. Production deploys and Android installation remain separate, explicit gates.
