@@ -56,6 +56,20 @@ const ACTION_TOOL = {
   }
 };
 
+const KNOWN_APP_ALIASES = {
+  "com.whatsapp": ["whatsapp"],
+  "com.android.chrome": ["chrome", "google chrome"],
+  "com.google.android.youtube": ["youtube"],
+  "com.google.android.gm": ["gmail"],
+  "com.google.android.apps.maps": ["google maps", "maps", "mapas"],
+  "com.instagram.android": ["instagram"],
+  "com.facebook.katana": ["facebook"],
+  "org.telegram.messenger": ["telegram"],
+  "com.spotify.music": ["spotify"],
+  "com.zhiliaoapp.musically": ["tiktok", "tik tok"],
+  "com.android.vending": ["play store", "google play", "loja play"],
+};
+
 const ACTION_FIELDS = ["packageName", "url", "phoneNumber", "setting", "text"];
 
 function proposalMatchesUserMessage(action, message) {
@@ -63,9 +77,18 @@ function proposalMatchesUserMessage(action, message) {
   const normalized = normalizePortuguese(raw);
 
   switch (action.type) {
-    case "open_app":
-      // Never trust a model-inferred package name. It must be present verbatim.
-      return normalized.includes(String(action.packageName ?? "").toLowerCase());
+    case "open_app": {
+      const packageName = String(action.packageName ?? "").toLowerCase();
+      // A package can be explicitly provided, or resolved from a small,
+      // deterministic allowlist only when the user named that app. Never accept
+      // a model-invented package for an unrelated app name.
+      if (normalized.includes(packageName)) return true;
+      const aliases = KNOWN_APP_ALIASES[packageName] || [];
+      return aliases.some((alias) => {
+        const pattern = alias.split(" ").join("\\s+");
+        return new RegExp("\\b" + pattern + "\\b").test(normalized);
+      });
+    }
     case "open_url": {
       const suppliedUrls = raw.match(/https?:\/\/[^\s<>"']+/gi) || [];
       let proposed;
@@ -127,8 +150,9 @@ export async function proposeAndroidAction(provider, message) {
         content: [
           "Você é um classificador de intenção para ações locais do Android, não um executor.",
           "Só chame a ferramenta quando a mensagem pedir claramente uma ação agora.",
-          "Nunca infira número de telefone, URL, texto para copiar ou nome de pacote que o usuário não forneceu.",
-          "Para abrir um aplicativo, packageName deve ser um nome de pacote explicitamente fornecido pelo usuário; não adivinhe pacotes a partir de nomes comerciais.",
+          "Nunca infira número de telefone, URL ou texto para copiar que o usuário não forneceu.",
+          "Para abrir aplicativos, use somente packageName da lista conhecida: WhatsApp=com.whatsapp, Chrome=com.android.chrome, YouTube=com.google.android.youtube, Gmail=com.google.android.gm, Google Maps=com.google.android.apps.maps, Instagram=com.instagram.android, Facebook=com.facebook.katana, Telegram=org.telegram.messenger, Spotify=com.spotify.music, TikTok=com.zhiliaoapp.musically, Play Store=com.android.vending.",
+          "Só proponha um desses aplicativos se o usuário tiver nomeado claramente o aplicativo; o servidor verificará isso de forma independente. Para qualquer outro aplicativo, exija que o usuário forneça o nome de pacote explícito.";
           "Para abrir configurações, escolha apenas o identificador permitido que corresponda ao pedido explícito.",
           "Se a intenção ou os dados estiverem ambíguos, não chame a ferramenta.",
           "Não execute nem proponha comandos de shell, JavaScript, intents arbitrários ou ações fora da ferramenta."
