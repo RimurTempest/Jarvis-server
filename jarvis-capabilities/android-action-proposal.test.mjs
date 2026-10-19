@@ -21,6 +21,30 @@ test("does not call the model when the front gate rejects the message", async ()
   assert.equal(called, false);
 });
 
+test("enforces the parser timeout through SDK request options, not the JSON body", async () => {
+  let requestBody;
+  let requestOptions;
+  const provider = {
+    model: "test",
+    client: {
+      chat: {
+        completions: {
+          create: async (body, options) => {
+            requestBody = body;
+            requestOptions = options;
+            return { choices: [{ message: {} }] };
+          },
+        },
+      },
+    },
+  };
+
+  assert.equal(await proposeAndroidAction(provider, "Jarvis, abra as configurações de Bluetooth"), null);
+  assert.equal(requestBody.timeout, undefined);
+  assert.equal(requestOptions.timeout, 8000);
+  assert.equal(requestOptions.maxRetries, 0);
+});
+
 test("validates model-proposed actions before returning them", async () => {
   const provider = {
     model: "test",
