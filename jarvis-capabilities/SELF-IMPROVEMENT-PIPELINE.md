@@ -31,8 +31,9 @@ When all required settings are present, a natural-language capability request re
 Authenticated endpoints:
 - `POST /api/capabilities/:id/proposals` — enqueue a proposal run for a known capability.
 - `GET /api/capabilities/:id/proposals` — inspect its latest run states and draft PR metadata.
+- `GET /api/capabilities/:id/proposals/:runId/validation` — verify that the PR is still open/draft, its head SHA exactly matches the generated proposal, and all required GitHub Actions plus any additional non-skipped workflows have completed successfully for that PR revision. A green result only validates repository checks; it does not authorize merge, deployment, or APK installation.
 
-The feature is deliberately disabled unless `JARVIS_SELF_IMPROVEMENT_ENABLED=true` and the following are configured on the server: `JARVIS_GITHUB_TOKEN`, `JARVIS_GITHUB_REPOSITORY` (owner/repository), `JARVIS_GITHUB_BASE_BRANCH` (optional; defaults to `main`), `EXA_API_KEY`, and at least one AI provider key. The GitHub token should be fine-grained and scoped to this repository with Contents: write and Pull requests: write only; it must not have merge, administration, or deployment permissions. Never put it in the Android APK or in chat.
+The feature is deliberately disabled unless `JARVIS_SELF_IMPROVEMENT_ENABLED=true` and the following are configured on the server: `JARVIS_GITHUB_TOKEN`, `JARVIS_GITHUB_REPOSITORY` (owner/repository), `JARVIS_GITHUB_BASE_BRANCH` (optional; defaults to `main`), `EXA_API_KEY`, and at least one AI provider key. The GitHub token should be fine-grained and scoped to this repository with Contents: read/write, Pull requests: read/write, and Actions: read only; it must not have merge, administration, or deployment permissions. Never put it in the Android APK or in chat.
 
 The server integration only queues and prepares draft PRs. It does not yet collect trusted CI evidence or build/sign an Android APK. Therefore a draft PR is a development artifact, not an installable update and not a deployment signal.
 
