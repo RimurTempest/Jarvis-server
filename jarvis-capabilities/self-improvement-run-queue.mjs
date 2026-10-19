@@ -8,6 +8,7 @@ const RUN_STATES = Object.freeze([
   "failed",
 ]);
 const ACTIVE_STATES = ["queued", "researching", "collecting_context", "generating", "publishing"];
+const VALID_TARGETS = new Set(["server", "android", "full_stack"]);
 const TRANSITIONS = Object.freeze({
   queued: new Set(["researching", "failed"]),
   researching: new Set(["researching", "collecting_context", "failed"]),
@@ -46,6 +47,7 @@ export async function initializeSelfImprovementRunQueue(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS jarvis_self_improvement_runs (
     id UUID PRIMARY KEY,
     capability_id TEXT NOT NULL REFERENCES jarvis_capabilities(id) ON DELETE CASCADE,
+    target TEXT NOT NULL DEFAULT 'server',
     state TEXT NOT NULL CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'failed')),
     repository TEXT NOT NULL,
     base_branch TEXT NOT NULL,
@@ -61,6 +63,7 @@ export async function initializeSelfImprovementRunQueue(pool) {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
   await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS head_revision TEXT");
+  await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS target TEXT NOT NULL DEFAULT 'server'");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_self_improvement_runs_capability_created ON jarvis_self_improvement_runs (capability_id, created_at DESC)");
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_self_improvement_one_active_per_capability
     ON jarvis_self_improvement_runs (capability_id)
@@ -72,17 +75,19 @@ export async function enqueueSelfImprovementRun(pool, {
   capabilityId,
   repository,
   baseBranch,
+  target = "server",
 }) {
   if (!validRunId(id)) throw new TypeError("id deve ser um UUID válido.");
   if (!validCapabilityId(capabilityId)) throw new TypeError("capabilityId inválido.");
   if (!validRepository(repository)) throw new TypeError("repository deve usar o formato owner/repository.");
   if (!validBranch(baseBranch)) throw new TypeError("baseBranch inválida.");
+  if (!VALID_TARGETS.has(target)) throw new TypeError("target inválido.");
   try {
     const result = await pool.query(
-      `INSERT INTO jarvis_self_improvement_runs (id, capability_id, state, repository, base_branch)
-       VALUES ($1, $2, 'queued', $3, $4)
-       RETURNING id, capability_id, state, repository, base_branch, created_at, updated_at`,
-      [id, capabilityId, repository, baseBranch],
+      `INSERT INTO jarvis_self_improvement_runs (id, capability_id, target, state, repository, base_branch)
+       VALUES ($1, $2, $3, 'queued', $4, $5)
+       RETURNING id, capability_id, target, state, repository, base_branch, created_at, updated_at`,
+      [id, capabilityId, target, repository, baseBranch],
     );
     return result.rows[0];
   } catch (error) {
