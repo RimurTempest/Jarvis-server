@@ -157,7 +157,7 @@ function shouldShowSources(message) {
   const explicitSources = /\b(fontes?|links?|referencias?|citacoes?|bibliografia|artigos cientificos|estudos cientificos|papers|artigos academicos|revisao sistematica|meta analise|evidencias cientificas)\b/.test(text);
   if (explicitSources) return true;
 
-  const highImpactOrScientific = /\b(saude|medico|medica|medicamento|remedio|tratamento|diagnostico|sintomas|efeitos colaterais|dose|doenca|doencas|cientifico|cientifica|cientificos|cientificas|estudo|estudos|pesquisa cientifica|evidencia cientifica|ensaio clinico|meta analise|revisao sistematica|juridico|juridica|lei vigente|legislacao|jurisprudencia|imposto|tributo|investimento|investir|risco financeiro|seguranca|seguranca publica|direitos do consumidor)\b/.test(text);
+  const highImpactOrScientific = /\b(saude|medico|medica|medicamento|remedio|tratamento|diagnostico|sintomas|efeitos colaterais|dose|doenca|doencas|cientifico|cientifica|cientificos|cientificas|estudo|estudos|pesquisa cientifica|evidencia cientifica|ensaio clinico|meta analise|revisao sistematica|juridico|juridica|lei vigente|legislacao|jurisprudencia|imposto|tributo|investimento|investir|risco financeiro|seguranca|seguranca publica|direitos do consumidor|politica|politico|politica publica|eleicao|eleicoes|guerra|conflito armado|crise internacional|direitos humanos|desastre|emergencia)\b/.test(text);
   return highImpactOrScientific;
 }
 
