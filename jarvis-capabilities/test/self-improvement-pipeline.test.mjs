@@ -49,6 +49,30 @@ test("runs research, context, generation and draft publishing in order", async (
   assert.deepEqual(calls.map((call) => call.stage), ["generate", "publish"]);
 });
 
+test("tries the alternate AI provider when the primary generator fails", async () => {
+  const { options, stages, calls } = setup({
+    fallbackProviders: [{ client: { id: "fallback" }, model: "fallback-model" }],
+    generateProposal: async (args) => {
+      calls.push({ stage: "generate", args });
+      if (args.client.id === "mock") throw new Error("primary provider unavailable");
+      return {
+        summary: "Fallback provider prepared a safe proposal.",
+        proposal: {
+          requestId: args.requestId,
+          baseRevision: args.baseRevision,
+          files: [{ path: "jarvis-capabilities/email.mjs", content: "export const email = true;" }],
+          tests: ["email test"],
+        },
+        validation: { ok: true, proposalDigest: "c".repeat(64), requiresHumanReview: false },
+      };
+    },
+  });
+  const result = await prepareSelfImprovementDraft(options);
+  assert.equal(result.summary, "Fallback provider prepared a safe proposal.");
+  assert.deepEqual(calls.map((call) => call.args.model), ["test-model", "fallback-model"]);
+  assert.deepEqual(stages, ["researching", "collecting_context", "generating", "publishing", "draft_pr_created"]);
+});
+
 test("stops when web research has no usable HTTPS sources", async () => {
   const { options, stages, calls } = setup({
     searchResearch: async () => ({ available: true, results: [{ title: "HTTP only", url: "http://example.com", text: "not trusted" }] }),
