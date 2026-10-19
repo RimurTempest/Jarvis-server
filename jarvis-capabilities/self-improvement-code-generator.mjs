@@ -24,7 +24,7 @@ function cleanContextFiles(value) {
       throw new TypeError(`contextFiles[${index}] inválido.`);
     }
     const path = nonEmptyText(file.path, `contextFiles[${index}].path`, 240);
-    if (path.startsWith("/") || path.includes("\\") || path.split("/").some((part) => !part || part === "." || part === "..")) {
+    if (path.startsWith("/") || path.includes("\\") || !/^[A-Za-z0-9._/@+-]+$/.test(path) || path.split("/").some((part) => !part || part === "." || part === "..")) {
       throw new TypeError(`Caminho de contexto inválido: ${path}.`);
     }
     if (/(^|\/)\.env(?:\.[^/]*)?$|(^|\/)\.git(\/|$)|(^|\/)node_modules(\/|$)|(^|\/)(?:secrets?|credentials?)(\/|$)|\.(?:pem|key|p12|pfx|jks|keystore)$/i.test(path)) {
@@ -33,6 +33,9 @@ function cleanContextFiles(value) {
     if (seen.has(path)) throw new TypeError(`Arquivo de contexto duplicado: ${path}.`);
     seen.add(path);
     const content = nonEmptyText(file.content, `contextFiles[${index}].content`, MAX_CONTEXT_FILE_CHARS);
+    if (/-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/i.test(content) || /(?:\\bsk-[A-Za-z0-9_-]{24,}\\b|\\bgh[pousr]_[A-Za-z0-9]{20,}\\b|\\bAKIA[0-9A-Z]{16}\\b)/.test(content)) {
+      throw new TypeError(`Possível credencial no contexto do repositório: ${path}.`);
+    }
     total += content.length;
     return { path, content };
   });
