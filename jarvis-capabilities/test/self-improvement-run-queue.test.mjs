@@ -53,6 +53,7 @@ test("self-improvement queue persists jobs, enforces one active job, and claims 
     await updateSelfImprovementRun(pool, firstId, "publishing");
     const completed = await updateSelfImprovementRun(pool, firstId, "draft_pr_created", {
       baseRevision: "a".repeat(40),
+      headRevision: "c".repeat(40),
       proposalDigest: "b".repeat(64),
       pullRequestNumber: 42,
       pullRequestUrl: "https://github.com/example/repo/pull/42",
