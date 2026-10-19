@@ -101,3 +101,34 @@ test("refuses rollback when the base branch has advanced", async () => {
   assert.deepEqual(result, { rolledBack: false, reason: "branch_advanced" });
   assert.equal(mock.calls.length, 1);
 });
+
+test("does not move the branch if it advances while a rollback commit is being prepared", async () => {
+  const mergeSha = sha("a");
+  const parentSha = sha("b");
+  const parentTreeSha = sha("c");
+  const revertSha = sha("d");
+  let refReads = 0;
+  const mock = githubMock(({ url, method }) => {
+    if (url.endsWith("/git/ref/heads/main") && method === "GET") {
+      refReads += 1;
+      return { payload: { object: { sha: refReads === 1 ? mergeSha : sha("e") } } };
+    }
+    if (url.endsWith("/git/commits/" + mergeSha)) return { payload: { parents: [{ sha: parentSha }] } };
+    if (url.endsWith("/git/commits/" + parentSha)) return { payload: { tree: { sha: parentTreeSha } } };
+    if (url.endsWith("/git/commits") && method === "POST") return { payload: { sha: revertSha } };
+    throw new Error("Unexpected GitHub request: " + method + " " + url);
+  });
+  const result = await revertMergedCommitSafely({
+    token: "x".repeat(30),
+    repository: "example/repo",
+    baseBranch: "main",
+    mergeCommitSha: mergeSha,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, {
+    rolledBack: false,
+    reason: "branch_advanced",
+    revertCommitSha: revertSha,
+  });
+  assert.equal(mock.calls.some((call) => call.method === "PATCH"), false);
+});
