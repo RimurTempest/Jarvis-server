@@ -91,7 +91,6 @@ jobs:
           node --test jarvis-capabilities/test/self-improvement-worker.test.mjs
           node --test jarvis-capabilities/test/self-improvement-server.integration.test.mjs
           node --test jarvis-capabilities/test/self-improvement-run-queue.test.mjs
-          node --test jarvis-capabilities/test/self-improvement-server.integration.test.mjs
           node --test jarvis-capabilities/test/self-improvement-pipeline.test.mjs
           node --test jarvis-capabilities/test/self-improvement-code-generator.test.mjs
           node --test jarvis-capabilities/test/self-improvement-github-publisher.test.mjs
@@ -111,3 +110,4 @@ jobs:
         run: |
           node --test jarvis-capabilities/test/postgres-action-queue.integration.test.mjs
           node --test jarvis-capabilities/test/self-improvement-run-queue.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-server.integration.test.mjs
