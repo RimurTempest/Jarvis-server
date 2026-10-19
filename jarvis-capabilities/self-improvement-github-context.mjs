@@ -3,6 +3,7 @@ const API_VERSION = "2022-11-28";
 const MAX_FILES = 20;
 const MAX_FILE_SIZE = 60_000;
 const MAX_TOTAL_SIZE = 180_000;
+const SUPPORTED_SOURCE_EXTENSIONS = /\.(?:mjs|js|json|md|kt|kts|java|xml|gradle|properties|toml|ya?ml|pro|txt)$/i;
 
 function validRepository(value) {
   return typeof value === "string" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value);
@@ -27,9 +28,10 @@ function isSensitivePath(path) {
 }
 
 function supportedSourcePath(path) {
-  return /\.(?:mjs|js|json|md)$/i.test(path) &&
-    !/(^|\/)test(?:s)?\//i.test(path) &&
-    !/\.test\.(?:mjs|js)$/i.test(path) &&
+  const javascriptTest = /(^|\/)test(?:s)?\/.*\.(?:mjs|js)$/i.test(path) ||
+    /\.test\.(?:mjs|js)$/i.test(path);
+  return SUPPORTED_SOURCE_EXTENSIONS.test(path) &&
+    !javascriptTest &&
     !/self-improvement-(?:proposal-policy|github-publisher|code-generator)/i.test(path);
 }
 
@@ -37,6 +39,10 @@ function scorePath(path, goalWords) {
   const normalized = path.toLowerCase();
   let score = 0;
   if (normalized === "server.js") score += 1000;
+  if (normalized.endsWith("/mainactivity.kt")) score += 950;
+  if (normalized.endsWith("/androidmanifest.xml")) score += 900;
+  if (/^app\/(?:build\.gradle\.kts|build\.gradle)$/.test(normalized)) score += 850;
+  if (/(^|\/)src\/(?:test|androidtest)\//.test(normalized) && /\.kt$/i.test(normalized)) score += 200;
   if (normalized === "package.json") score += 900;
   if (normalized === "behavior.js") score += 850;
   if (normalized === "jarvis-capabilities/readme.md") score += 800;
