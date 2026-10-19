@@ -69,7 +69,7 @@ test("rolls back only when branch head is exactly the failed merge commit", asyn
   const parentTreeSha = sha("c");
   const revertSha = sha("d");
   const mock = githubMock(({ url, method }) => {
-    if (url.endsWith("/git/ref/heads/main")) return { payload: { object: { sha: mergeSha } } };
+    if (url.endsWith("/git/ref/heads/main") && method === "GET") return { payload: { object: { sha: mergeSha } } };
     if (url.endsWith("/git/commits/" + mergeSha)) return { payload: { parents: [{ sha: parentSha }] } };
     if (url.endsWith("/git/commits/" + parentSha)) return { payload: { tree: { sha: parentTreeSha } } };
     if (url.endsWith("/git/commits") && method === "POST") return { payload: { sha: revertSha } };
