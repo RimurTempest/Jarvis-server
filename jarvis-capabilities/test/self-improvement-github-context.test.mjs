@@ -16,6 +16,10 @@ function fakeFetch({ truncated = false } = {}) {
     { path: "package.json", type: "blob", size: 50 },
     { path: "jarvis-capabilities/example.mjs", type: "blob", size: 70 },
     { path: "jarvis-capabilities/test/example.test.mjs", type: "blob", size: 20 },
+    { path: "app/src/main/java/com/senhor/jarvis/MainActivity.kt", type: "blob", size: 100 },
+    { path: "app/src/main/AndroidManifest.xml", type: "blob", size: 90 },
+    { path: "app/src/test/java/com/senhor/jarvis/ExampleUnitTest.kt", type: "blob", size: 40 },
+    { path: "local.properties", type: "blob", size: 10 },
     { path: ".env.production", type: "blob", size: 10 },
     { path: "secrets/key.json", type: "blob", size: 10 },
   ];
@@ -42,7 +46,11 @@ test("fetches bounded context from an exact base revision and excludes unsafe fi
   assert.ok(result.contextFiles.some((file) => file.path === "server.js"));
   assert.equal(result.contextFiles.some((file) => file.path.includes(".env")), false);
   assert.equal(result.contextFiles.some((file) => file.path.includes("secrets/")), false);
-  assert.equal(result.contextFiles.some((file) => file.path.includes(".test.")), false);
+  assert.equal(result.contextFiles.some((file) => file.path.includes(".test.mjs")), false);
+  assert.ok(result.contextFiles.some((file) => file.path.endsWith("MainActivity.kt")));
+  assert.ok(result.contextFiles.some((file) => file.path.endsWith("AndroidManifest.xml")));
+  assert.ok(result.contextFiles.some((file) => file.path.endsWith("ExampleUnitTest.kt")));
+  assert.equal(result.contextFiles.some((file) => file.path === "local.properties"), false);
   assert.ok(calls.every((call) => call.options.headers.Authorization === "Bearer " + "x".repeat(40)));
 });
 
