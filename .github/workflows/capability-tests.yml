@@ -72,6 +72,8 @@ jobs:
           node --check jarvis-capabilities/capability-validation-policy.mjs
           node --check jarvis-capabilities/capability-evidence-attestation.mjs
           node --check jarvis-capabilities/learning-intent.mjs
+          node --check jarvis-capabilities/capability-intent-classifier.mjs
+          node --check jarvis-capabilities/test/capability-intent-classifier.test.mjs
           node --check jarvis-capabilities/android-action-protocol.mjs
           node --check jarvis-capabilities/android-device-auth.mjs
           node --check jarvis-capabilities/action-delivery.mjs
@@ -107,6 +109,7 @@ jobs:
           node --test jarvis-capabilities/test/capability-validation-policy.test.mjs
           node --test jarvis-capabilities/test/capability-evidence-attestation.test.mjs
           node --test jarvis-capabilities/test/learning-intent.test.mjs
+          node --test jarvis-capabilities/test/capability-intent-classifier.test.mjs
           node --test jarvis-capabilities/test/android-action-protocol.test.mjs
           node --test jarvis-capabilities/test/android-device-auth.test.mjs
           node --test jarvis-capabilities/test/action-delivery.test.mjs
