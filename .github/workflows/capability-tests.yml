@@ -53,6 +53,8 @@ jobs:
           node --check jarvis-capabilities/self-improvement-github-context.mjs
           node --check jarvis-capabilities/self-improvement-worker.mjs
           node --check jarvis-capabilities/self-improvement-auto-activation.mjs
+          node --check jarvis-capabilities/self-improvement-runtime-guard.mjs
+          node --check jarvis-capabilities/test/self-improvement-runtime-guard.test.mjs
           node --check jarvis-capabilities/test/self-improvement-auto-activation.test.mjs
           node --check jarvis-capabilities/test/self-improvement-worker.test.mjs
           node --check jarvis-capabilities/test/self-improvement-server.integration.test.mjs
@@ -101,6 +103,7 @@ jobs:
           node --test jarvis-capabilities/test/self-improvement-github-context.test.mjs
           node --test jarvis-capabilities/test/self-improvement-worker.test.mjs
           node --test jarvis-capabilities/test/self-improvement-auto-activation.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-runtime-guard.test.mjs
           node --test jarvis-capabilities/test/self-improvement-server.integration.test.mjs
           node --test jarvis-capabilities/test/self-improvement-run-queue.test.mjs
           node --test jarvis-capabilities/test/self-improvement-github-validation.test.mjs
