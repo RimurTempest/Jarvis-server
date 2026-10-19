@@ -29,12 +29,16 @@ function safeHealthUrl(value) {
 }
 
 export function resolveRuntimeHealthUrl(env = process.env) {
-  const configured = typeof env.JARVIS_RUNTIME_HEALTHCHECK_URL === "string" && env.JARVIS_RUNTIME_HEALTHCHECK_URL.trim()
-    ? env.JARVIS_RUNTIME_HEALTHCHECK_URL.trim()
-    : typeof env.RENDER_EXTERNAL_URL === "string" && env.RENDER_EXTERNAL_URL.trim()
-      ? new URL("/health", env.RENDER_EXTERNAL_URL.trim()).toString()
-      : "";
-  return safeHealthUrl(configured);
+  try {
+    const configured = typeof env.JARVIS_RUNTIME_HEALTHCHECK_URL === "string" && env.JARVIS_RUNTIME_HEALTHCHECK_URL.trim()
+      ? env.JARVIS_RUNTIME_HEALTHCHECK_URL.trim()
+      : typeof env.RENDER_EXTERNAL_URL === "string" && env.RENDER_EXTERNAL_URL.trim()
+        ? new URL("/health", env.RENDER_EXTERNAL_URL.trim()).toString()
+        : "";
+    return safeHealthUrl(configured);
+  } catch {
+    return null;
+  }
 }
 
 export async function verifyRuntimeRevision({
