@@ -21,6 +21,20 @@ concurrency:
 jobs:
   capability-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: jarvis_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d jarvis_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,6 +42,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install project dependencies for PostgreSQL integration tests
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Check capability module syntax
         run: |
           node --check jarvis-capabilities/capability-prompt-context.mjs
@@ -50,6 +66,7 @@ jobs:
           node --check jarvis-capabilities/test/android-device-auth.test.mjs
           node --check jarvis-capabilities/test/action-delivery.test.mjs
           node --check jarvis-capabilities/test/postgres-action-queue.test.mjs
+          node --check jarvis-capabilities/test/postgres-action-queue.integration.test.mjs
           node --check jarvis-capabilities/test/android-action-routes.test.mjs
       - name: Run capability tests
         run: |
@@ -63,4 +80,8 @@ jobs:
           node --test jarvis-capabilities/test/action-delivery.test.mjs
           node --test jarvis-capabilities/test/postgres-action-queue.test.mjs
           node --test jarvis-capabilities/test/android-action-routes.test.mjs
+      - name: Run PostgreSQL-backed integration tests
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/jarvis_test
+        run: node --test jarvis-capabilities/test/postgres-action-queue.integration.test.mjs
           node --test jarvis-capabilities/android-action-proposal.test.mjs
