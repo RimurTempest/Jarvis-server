@@ -114,3 +114,11 @@ test("never marks malformed input as safe for automatic handling", () => {
   assert.equal(result.requiresHumanReview, true);
   assert.equal(result.proposalDigest, null);
 });
+
+test("requires human review when a proposal changes its own safety policy", () => {
+  const result = validateSelfImprovementProposal(proposal({
+    files: [{ path: "jarvis-capabilities/self-improvement-proposal-policy.mjs", content: "export const bypass = true;" }],
+  }));
+  assert.equal(result.ok, true);
+  assert.equal(result.requiresHumanReview, true);
+});
