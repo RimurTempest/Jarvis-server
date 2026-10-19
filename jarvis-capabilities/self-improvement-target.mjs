@@ -1,5 +1,5 @@
 const DEFAULT_BASE_BRANCH = "main";
-const ANDROID_TARGET_PATTERN = /\b(?:android|apk|celular|telefone|chamada|ligac[aã]o|ligar|discador|e-?mail|email|aplicativo|app|notifica[cç][aã]o|permiss[aã]o|tela|widget|bolha flutuante|instalar no telefone)\b/i;
+const ANDROID_TARGET_PATTERN = /(?:\bandroid\b|\bapk\b|\bcelular(?:es)?\b|\btelefone(?:s)?\b|\bchamad(?:a|as|o|os)\b|\bliga(?:c(?:ao|oes)|ç(?:ão|ões)|r)\b|\bdiscador\b|\be-?mails?\b|\bemail\b|\baplicativos?\b|\bapps?\b|\bnotifica(?:ção|ções|c[aã]o|c[aã]oes)\b|\bpermiss(?:ão|ões|ao|oes)\b|\btelas?\b|\bwidgets?\b|\bbolha flutuante\b|\binstalar no telefone\b)/i;
 
 function validRepository(value) {
   return typeof value === "string" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value);
