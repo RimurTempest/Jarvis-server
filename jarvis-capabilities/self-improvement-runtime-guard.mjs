@@ -49,6 +49,24 @@ export function isSelfImprovementAutoMergeConfigured({
   runtimeHealthUrl,
 }) {
   const token = env?.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN;
+  const configuredHealthUrl = safeHealthUrl(runtimeHealthUrl);
+  let renderHealthUrl = null;
+  try {
+    if (typeof env?.RENDER_EXTERNAL_URL === "string" && env.RENDER_EXTERNAL_URL.trim()) {
+      renderHealthUrl = safeHealthUrl(new URL("/health", env.RENDER_EXTERNAL_URL.trim()).toString());
+    }
+  } catch {
+    renderHealthUrl = null;
+  }
+  let healthTargetMatches = false;
+  try {
+    healthTargetMatches = Boolean(configuredHealthUrl && renderHealthUrl) &&
+      new URL(configuredHealthUrl).pathname === "/health" &&
+      new URL(configuredHealthUrl).origin === new URL(renderHealthUrl).origin;
+  } catch {
+    healthTargetMatches = false;
+  }
+
   return env?.JARVIS_SELF_IMPROVEMENT_AUTO_MERGE === "true" &&
     target === "server" &&
     validRepository(repository) &&
@@ -57,7 +75,7 @@ export function isSelfImprovementAutoMergeConfigured({
     typeof env?.RENDER_GIT_BRANCH === "string" &&
     env.RENDER_GIT_BRANCH === baseBranch &&
     validBranch(baseBranch) &&
-    Boolean(safeHealthUrl(runtimeHealthUrl)) &&
+    healthTargetMatches &&
     typeof token === "string" &&
     token.trim().length >= 20;
 }
