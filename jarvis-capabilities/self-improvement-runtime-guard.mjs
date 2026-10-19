@@ -41,6 +41,27 @@ export function resolveRuntimeHealthUrl(env = process.env) {
   }
 }
 
+export function isSelfImprovementAutoMergeConfigured({
+  env = process.env,
+  target,
+  repository,
+  baseBranch,
+  runtimeHealthUrl,
+}) {
+  const token = env?.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN;
+  return env?.JARVIS_SELF_IMPROVEMENT_AUTO_MERGE === "true" &&
+    target === "server" &&
+    validRepository(repository) &&
+    typeof env?.RENDER_GIT_REPO_SLUG === "string" &&
+    env.RENDER_GIT_REPO_SLUG.toLowerCase() === repository.toLowerCase() &&
+    typeof env?.RENDER_GIT_BRANCH === "string" &&
+    env.RENDER_GIT_BRANCH === baseBranch &&
+    validBranch(baseBranch) &&
+    Boolean(safeHealthUrl(runtimeHealthUrl)) &&
+    typeof token === "string" &&
+    token.trim().length >= 20;
+}
+
 export async function verifyRuntimeRevision({
   healthUrl,
   expectedRevision,
