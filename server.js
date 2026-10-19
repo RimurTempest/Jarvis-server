@@ -972,7 +972,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
         const descriptions = {
           open_app: `abrir o aplicativo ${proposedAndroidAction.packageName}`,
           open_url: `abrir o endereço ${proposedAndroidAction.url}`,
-          dial_number: `ligar para ${proposedAndroidAction.phoneNumber}`,
+          dial_number: `abrir o discador com o número ${proposedAndroidAction.phoneNumber}`,
           open_settings: `abrir as configurações de ${proposedAndroidAction.setting}`,
           copy_text: "copiar o texto solicitado",
         };
