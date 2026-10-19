@@ -69,7 +69,7 @@ test("tries the alternate AI provider when the primary generator fails", async (
   });
   const result = await prepareSelfImprovementDraft(options);
   assert.equal(result.summary, "Fallback provider prepared a safe proposal.");
-  assert.deepEqual(calls.map((call) => call.args.model), ["test-model", "fallback-model"]);
+  assert.deepEqual(calls.filter((call) => call.stage === "generate").map((call) => call.args.model), ["test-model", "fallback-model"]);
   assert.deepEqual(stages, ["researching", "collecting_context", "generating", "publishing", "draft_pr_created"]);
 });
 
