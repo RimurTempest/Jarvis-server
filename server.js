@@ -408,6 +408,7 @@ async function processSelfImprovementRun(run) {
   let finalState = "draft_pr_created";
   let mergeCommitSha = null;
   let rollbackCommitSha = null;
+  let runtimeRevision = null;
   let runtimeVerificationReason = null;
   const runtimeHealthUrl = resolveRuntimeHealthUrl();
   const autoMergeEnabled = isSelfImprovementAutoMergeConfigured({
@@ -470,6 +471,7 @@ async function processSelfImprovementRun(run) {
 
         if (runtimeResult.verified) {
           finalState = "runtime_verified";
+          runtimeRevision = runtimeResult.revision;
         } else {
           runtimeVerificationReason = runtimeResult.reason || "runtime_revision_not_healthy";
           try {
@@ -488,6 +490,7 @@ async function processSelfImprovementRun(run) {
                 intervalMs: 5000,
               });
               finalState = rollbackHealth.verified ? "rolled_back" : "merge_unverified";
+              if (rollbackHealth.verified) runtimeRevision = rollbackHealth.revision;
               if (!rollbackHealth.verified) runtimeVerificationReason = rollbackHealth.reason || "rollback_runtime_not_verified";
             } else {
               finalState = "merge_unverified";
@@ -509,9 +512,13 @@ async function processSelfImprovementRun(run) {
     }
   }
 
-  const persistedRunMetadata = finalState === "merge_unverified" && runtimeVerificationReason
-    ? { ...runMetadata, errorCode: runtimeVerificationReason.slice(0, 80) }
-    : runMetadata;
+  const persistedRunMetadata = {
+    ...runMetadata,
+    ...(runtimeRevision ? { runtimeRevision } : {}),
+    ...(finalState === "merge_unverified" && runtimeVerificationReason
+      ? { errorCode: runtimeVerificationReason.slice(0, 80) }
+      : {}),
+  };
   if (finalState !== "draft_pr_created") {
     await updateSelfImprovementRun(pool, run.id, finalState, persistedRunMetadata);
   } else {
@@ -1216,7 +1223,7 @@ app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => 
     await initializeDatabase();
     const result = await pool.query(
       `SELECT run.id, run.capability_id AS "capabilityId", capability.goal,
-              run.target, run.state, run.repository,
+              run.target, run.state, run.repository, run.runtime_revision AS "runtimeRevision",
               run.pull_request_number AS "pullRequestNumber",
               run.pull_request_url AS "pullRequestUrl",
               run.proposal_summary AS "summary",
