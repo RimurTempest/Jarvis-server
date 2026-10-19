@@ -47,7 +47,7 @@ function requiresElevatedReview(path) {
     lower === "package.json" ||
     lower === "package-lock.json" ||
     lower.startsWith(".github/") ||
-    /(?:auth|route|registry|queue|protocol|evidence|validation|postgres|enrollment|android|update|release|install|deploy|security)/i.test(lower);
+    /(?:auth|route|registry|queue|protocol|evidence|validation|postgres|enrollment|android|update|release|install|deploy|security|self-improvement|proposal|publisher|policy)/i.test(lower);
 }
 
 /**
