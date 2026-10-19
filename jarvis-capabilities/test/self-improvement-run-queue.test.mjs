@@ -103,12 +103,14 @@ test("stale merged jobs become unverified instead of being merged a second time"
       pullRequestNumber: 43,
       pullRequestUrl: "https://github.com/example/repo/pull/43",
       proposalSummary: "Stale merge test",
+      mergeCommitSha: "d".repeat(40),
     });
     await pool.query("UPDATE jarvis_self_improvement_runs SET updated_at = NOW() - INTERVAL '21 minutes' WHERE id = $1", [runId]);
     assert.equal(await recoverStaleSelfImprovementRuns(pool, 10), 1);
-    const state = await pool.query("SELECT state, error_code FROM jarvis_self_improvement_runs WHERE id = $1", [runId]);
+    const state = await pool.query("SELECT state, error_code, merge_commit_sha FROM jarvis_self_improvement_runs WHERE id = $1", [runId]);
     assert.equal(state.rows[0].state, "merge_unverified");
     assert.equal(state.rows[0].error_code, "runtime_verification_interrupted");
+    assert.equal(state.rows[0].merge_commit_sha, "d".repeat(40));
   } finally {
     await pool.query("DELETE FROM jarvis_self_improvement_runs WHERE capability_id = $1", [capabilityId]).catch(() => {});
     await pool.query("DELETE FROM jarvis_capabilities WHERE id = $1", [capabilityId]).catch(() => {});
@@ -145,6 +147,24 @@ test("final state requires exact PR metadata and errors require safe codes", asy
   };
   await assert.rejects(updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "draft_pr_created", {}), /exige PR/i);
   await assert.rejects(updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "failed", {}), /código de erro/i);
+  await assert.rejects(updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "merged", {
+    baseRevision: "a".repeat(40),
+    headRevision: "c".repeat(40),
+    proposalDigest: "b".repeat(64),
+    pullRequestNumber: 42,
+    pullRequestUrl: "https://github.com/example/repo/pull/42",
+    proposalSummary: "Example capability proposal",
+    mergeCommitSha: "not-a-sha",
+  }), /mergeCommitSha/i);
+  await assert.rejects(updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "merged", {
+    baseRevision: "a".repeat(40),
+    headRevision: "c".repeat(40),
+    proposalDigest: "b".repeat(64),
+    pullRequestNumber: 42,
+    pullRequestUrl: "https://github.com/example/repo/pull/42",
+    proposalSummary: "Example capability proposal",
+    rollbackRevision: "not-a-sha",
+  }), /rollbackRevision/i);
   const merged = await updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "merged", {
     baseRevision: "a".repeat(40),
     headRevision: "c".repeat(40),
