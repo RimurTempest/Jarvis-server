@@ -19,11 +19,11 @@ function normalizeIntent(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const intent = value.intent;
   if (!["create_capability", "not_capability"].includes(intent)) return null;
-  if (intent === "not_capability") return { intent, goal: null, confidence: 1 };
-  const goal = cleanText(value.goal, 3500);
   const confidence = Number(value.confidence);
-  if (goal.length < 3 || /^(isso|aquilo|essa tarefa|esta tarefa|aqui)$/i.test(goal)) return null;
   if (!Number.isFinite(confidence) || confidence < 0.82 || confidence > 1) return null;
+  if (intent === "not_capability") return { intent, goal: null, confidence };
+  const goal = cleanText(value.goal, 3500);
+  if (goal.length < 3 || /^(isso|aquilo|essa tarefa|esta tarefa|aqui)$/i.test(goal)) return null;
   return { intent, goal, confidence };
 }
 
