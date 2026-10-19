@@ -131,10 +131,12 @@ export async function recoverStaleSelfImprovementRuns(pool, staleAfterMinutes = 
   if (!Number.isInteger(staleAfterMinutes) || staleAfterMinutes < 1 || staleAfterMinutes > 120) {
     throw new TypeError("staleAfterMinutes deve estar entre 1 e 120.");
   }
+  // Runtime verification can legitimately take several minutes while the host deploys.
+  // Give merged runs twice the ordinary stale window so recovery cannot race a live verifier.
   const unresolvedMerges = await pool.query(`UPDATE jarvis_self_improvement_runs
     SET state = 'merge_unverified', error_code = 'runtime_verification_interrupted', claimed_at = NULL, updated_at = NOW()
     WHERE state = 'merged'
-      AND updated_at < NOW() - ($1::int * INTERVAL '1 minute')
+      AND updated_at < NOW() - (($1::int * 2) * INTERVAL '1 minute')
     RETURNING id`, [staleAfterMinutes]);
   const result = await pool.query(`UPDATE jarvis_self_improvement_runs
     SET state = 'queued', claimed_at = NULL, updated_at = NOW()
