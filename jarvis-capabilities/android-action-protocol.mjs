@@ -84,7 +84,6 @@ export function createAndroidActionEnvelope({ id, capabilityId, action, requeste
     throw new RangeError("A ação deve expirar entre agora e os próximos 10 minutos.");
   }
   const normalizedAction = validateAndroidAction(action);
-  const requiresUserConfirmation = normalizedAction.requiresUserConfirmation === true;
   return {
     id: cleanIdentifier(id, "id"),
     capabilityId: cleanIdentifier(capabilityId, "capabilityId"),
