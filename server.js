@@ -410,8 +410,14 @@ async function processSelfImprovementRun(run) {
   let rollbackCommitSha = null;
   let runtimeVerificationReason = null;
   const runtimeHealthUrl = resolveRuntimeHealthUrl();
+  const renderRepositoryMatches = typeof process.env.RENDER_GIT_REPO_SLUG === "string" &&
+    process.env.RENDER_GIT_REPO_SLUG.toLowerCase() === String(run.repository).toLowerCase();
+  const renderBranchMatches = typeof process.env.RENDER_GIT_BRANCH === "string" &&
+    process.env.RENDER_GIT_BRANCH === run.base_branch;
   const autoMergeEnabled = process.env.JARVIS_SELF_IMPROVEMENT_AUTO_MERGE === "true" &&
     run.target === "server" &&
+    renderRepositoryMatches &&
+    renderBranchMatches &&
     Boolean(runtimeHealthUrl) &&
     typeof process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN === "string" &&
     process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN.trim().length >= 20;
