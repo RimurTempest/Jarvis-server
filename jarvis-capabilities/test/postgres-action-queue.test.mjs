@@ -61,7 +61,7 @@ test("initializes the queue table and indexes", async () => {
   assert.ok(pool.calls.some((call) => call.sql.includes("ALTER TABLE jarvis_action_queue ALTER COLUMN target_device_id SET NOT NULL")));
   assert.ok(pool.calls.some((call) => call.sql.includes("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE")));
   assert.ok(pool.calls.some((call) => call.sql.includes("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE")));
-  assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_pending")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_target_pending")));
   assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_lease")));
 });
 
