@@ -16,6 +16,7 @@ import { prepareSelfImprovementDraft } from "./jarvis-capabilities/self-improvem
 import { initializeSelfImprovementRunQueue, enqueueSelfImprovementRun, updateSelfImprovementRun, listSelfImprovementRuns } from "./jarvis-capabilities/self-improvement-run-queue.mjs";
 import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improvement-worker.mjs";
 import { inspectDraftPullRequestValidation } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
+import { resolveSelfImprovementTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -296,16 +297,11 @@ function formatSourceList(webSearch) {
 
 function selfImprovementPipelineEnabled() {
   const token = process.env.JARVIS_GITHUB_TOKEN;
-  const repository = process.env.JARVIS_GITHUB_REPOSITORY;
-  const baseBranch = process.env.JARVIS_GITHUB_BASE_BRANCH || "main";
   return process.env.JARVIS_SELF_IMPROVEMENT_ENABLED === "true" &&
     Boolean(pool) &&
     providers.length > 0 &&
     Boolean(process.env.EXA_API_KEY) &&
-    typeof token === "string" && token.trim().length >= 20 &&
-    typeof repository === "string" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) &&
-    typeof baseBranch === "string" && baseBranch.length <= 100 &&
-    /^[A-Za-z0-9._/-]+$/.test(baseBranch) && !baseBranch.includes("..");
+    typeof token === "string" && token.trim().length >= 20;
 }
 
 async function processSelfImprovementRun(run) {
@@ -873,11 +869,15 @@ app.post("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
     const capabilityResult = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [id]);
     if (!capabilityResult.rowCount) return res.status(404).json({ error: "Capacidade não encontrada." });
     const capability = capabilityResult.rows[0].record;
+    const target = resolveSelfImprovementTarget(capability.goal);
+    if (!target.available) {
+      return res.status(503).json({ error: target.reason, target: target.target, queued: false });
+    }
     const run = await enqueueSelfImprovementRun(pool, {
       id: randomUUID(),
       capabilityId: id,
-      repository: process.env.JARVIS_GITHUB_REPOSITORY,
-      baseBranch: process.env.JARVIS_GITHUB_BASE_BRANCH || "main",
+      repository: target.repository,
+      baseBranch: target.baseBranch,
     });
     await recordLearningEvent("self_improvement_run_queued", capability.goal, {
       capabilityId: id,
@@ -1117,20 +1117,25 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   const capabilityAlreadyReusable = Boolean(activeCapability && capabilityCanBeReused(activeCapability));
   if (capabilityLearningRequest && activeCapability && !capabilityAlreadyReusable) {
     if (selfImprovementPipelineEnabled()) {
-      try {
-        const queuedRun = await enqueueSelfImprovementRun(pool, {
-          id: randomUUID(),
-          capabilityId: activeCapability.id,
-          repository: process.env.JARVIS_GITHUB_REPOSITORY,
-          baseBranch: process.env.JARVIS_GITHUB_BASE_BRANCH || "main",
-        });
-        capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: a solicitação foi colocada na fila com o ID ${queuedRun.id}. O processo pesquisará, criará uma proposta em branch isolada e abrirá um pull request draft. Não afirme que o código foi implementado, testado, instalado ou implantado antes de evidência independente.`;
-      } catch (error) {
-        if (error?.code === "SELF_IMPROVEMENT_ALREADY_ACTIVE") {
-          capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade. Não crie outra nem afirme que terminou.";
-        } else {
-          console.error("Falha ao enfileirar solicitação de capacidade:", error?.name || "Error");
-          capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Informe que a solicitação foi registrada/pesquisada, mas não prometa alteração de código.";
+      const target = resolveSelfImprovementTarget(activeCapability.goal);
+      if (!target.available) {
+        capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO BLOQUEADO: ${target.reason} Não afirme que o código foi implementado nem que haverá uma atualização pronta.`;
+      } else {
+        try {
+          const queuedRun = await enqueueSelfImprovementRun(pool, {
+            id: randomUUID(),
+            capabilityId: activeCapability.id,
+            repository: target.repository,
+            baseBranch: target.baseBranch,
+          });
+          capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: a solicitação foi colocada na fila com o ID ${queuedRun.id}, alvo ${target.target}. O processo pesquisará, criará uma proposta em branch isolada e abrirá um pull request draft. Não afirme que o código foi implementado, testado, instalado ou implantado antes de evidência independente.`;
+        } catch (error) {
+          if (error?.code === "SELF_IMPROVEMENT_ALREADY_ACTIVE") {
+            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade. Não crie outra nem afirme que terminou.";
+          } else {
+            console.error("Falha ao enfileirar solicitação de capacidade:", error?.name || "Error");
+            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Informe que a solicitação foi registrada/pesquisada, mas não prometa alteração de código.";
+          }
         }
       }
     } else {
