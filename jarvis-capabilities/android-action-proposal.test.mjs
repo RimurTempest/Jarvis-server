@@ -13,6 +13,9 @@ test("does not classify explanations or learning requests as execution", () => {
   assert.equal(isDirectAndroidActionRequest("Aprenda a abrir aplicativos"), false);
   assert.equal(isDirectAndroidActionRequest("O que significa abrir uma URL?"), false);
   assert.equal(isDirectAndroidActionRequest("Quero que você não abra o Bluetooth"), false);
+  assert.equal(isDirectAndroidActionRequest("Não quero que você abra o Bluetooth"), false);
+  assert.equal(isDirectAndroidActionRequest("Não autorizo que você ligue para +55 11 99999-0000"), false);
+  assert.equal(isDirectAndroidActionRequest("Nunca quero que você copie esse texto"), false);
 });
 
 test("does not call the model when the front gate rejects the message", async () => {
