@@ -333,6 +333,7 @@ async function processSelfImprovementRun(run) {
 
   await updateSelfImprovementRun(pool, run.id, "draft_pr_created", {
     baseRevision: result.baseRevision,
+    headRevision: result.pullRequest.commitSha,
     proposalDigest: result.proposalDigest,
     pullRequestNumber: result.pullRequest.number,
     pullRequestUrl: result.pullRequest.url,
@@ -810,6 +811,7 @@ app.get("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
         repository: run.repository,
         baseBranch: run.base_branch,
         baseRevision: run.base_revision,
+        headRevision: run.head_revision,
         proposalDigest: run.proposal_digest,
         pullRequestNumber: run.pull_request_number,
         pullRequestUrl: run.pull_request_url,
