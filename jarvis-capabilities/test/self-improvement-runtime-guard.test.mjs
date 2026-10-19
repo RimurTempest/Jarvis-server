@@ -13,6 +13,7 @@ test("resolves only HTTPS runtime health URLs", () => {
   assert.equal(resolveRuntimeHealthUrl({ JARVIS_RUNTIME_HEALTHCHECK_URL: "https://example.com/health" }), "https://example.com/health");
   assert.equal(resolveRuntimeHealthUrl({ RENDER_EXTERNAL_URL: "https://jarvis.onrender.com" }), "https://jarvis.onrender.com/health");
   assert.equal(resolveRuntimeHealthUrl({}), null);
+  assert.equal(resolveRuntimeHealthUrl({ RENDER_EXTERNAL_URL: "not a URL" }), null);
 });
 
 test("verifies only a healthy runtime reporting the exact merged revision", async () => {
