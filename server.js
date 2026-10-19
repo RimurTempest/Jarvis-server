@@ -423,7 +423,19 @@ async function handleSelfImprovementRunFailure(run, error) {
     const current = await pool.query("SELECT state FROM jarvis_self_improvement_runs WHERE id = $1", [run.id]);
     const state = current.rows[0]?.state;
     if (state && !["draft_pr_created", "failed"].includes(state)) {
-      await updateSelfImprovementRun(pool, run.id, "failed", { errorCode: "pipeline_failed" });
+      const safeCodes = new Set([
+        "ci_repair_exhausted",
+        "ci_validation_timeout",
+        "ci_repair_stale_revision",
+        "ci_repair_invalid_draft",
+      ]);
+      const errorCode = safeCodes.has(error?.code) ? error.code : "pipeline_failed";
+      await updateSelfImprovementRun(pool, run.id, "failed", { errorCode });
+      await recordLearningEvent(
+        "self_improvement_run_failed",
+        "A execução de autoaperfeiçoamento terminou sem ativar nenhuma alteração.",
+        { capabilityId: run.capability_id, runId: run.id, errorCode },
+      ).catch(() => {});
     }
   } catch {
     // Do not leak provider or repository response details through the worker.
