@@ -85,7 +85,7 @@ function proposalMatchesUserMessage(action, message) {
       return Boolean(action.text) && normalized.includes(normalizePortuguese(action.text));
     case "open_settings": {
       const settingTerms = {
-        wifi: /\bwi ?fi\b/,
+        wifi: /\bwi[- ]?fi\b/,
         bluetooth: /\bbluetooth\b/,
         display: /\b(tela|visor|brilho|display)\b/,
         sound: /\b(som|volume|audio)\b/,
