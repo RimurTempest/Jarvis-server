@@ -70,3 +70,24 @@ test("passes recent conversation and active capabilities to the classifier", asy
   assert.match(request.messages[1].content, /agendar reuniões/);
   assert.match(request.messages[1].content, /MENSAGEM ATUAL DO USUÁRIO/);
 });
+
+test("redacts secrets and personal identifiers before sending conversation context", async () => {
+  let request;
+  const provider = {
+    model: "test-model",
+    client: { chat: { completions: { create: async (payload) => {
+      request = payload;
+      return { choices: [{ message: { content: JSON.stringify({ intent: "not_capability", goal: null, confidence: 1 }) } }] };
+    } } } },
+  };
+  await classifyCapabilityIntent({
+    provider,
+    message: "Use api_key=sk-supersecret123 and contact maria@example.com",
+    history: [{ role: "user", content: "Bearer abcdefghijklmnopqrstuvwxyz123" }],
+  });
+  const context = request.messages[1].content;
+  assert.doesNotMatch(context, /sk-supersecret123/);
+  assert.doesNotMatch(context, /maria@example.com/);
+  assert.doesNotMatch(context, /abcdefghijklmnopqrstuvwxyz123/);
+  assert.match(context, /redigido|removido/);
+});
