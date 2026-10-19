@@ -27,6 +27,11 @@ function allChecksFinished(validation) {
   );
 }
 
+function hasRepairableCiFailure(validation) {
+  const checks = [...(validation?.checks ?? []), ...(validation?.extraChecks ?? [])];
+  return checks.some((check) => ["failure", "timed_out", "action_required"].includes(check?.conclusion));
+}
+
 function makeError(message, code) {
   const error = new Error(message);
   error.code = code;
@@ -105,6 +110,12 @@ export async function runSelfImprovementCiRepairLoop({
       throw makeError(
         "A validação CI não terminou dentro do limite; nenhuma proposta foi aprovada ou ativada.",
         "ci_validation_timeout",
+      );
+    }
+    if (!hasRepairableCiFailure(validation)) {
+      throw makeError(
+        "A validação terminou sem um erro de teste reparável; nenhuma nova proposta foi gerada.",
+        "ci_validation_not_repairable",
       );
     }
     const diagnosed = await diagnoseFailure(validation);
