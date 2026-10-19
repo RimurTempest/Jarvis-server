@@ -56,6 +56,8 @@ test("initializes the queue table and indexes", async () => {
   const pool = fakePool();
   await initializeActionQueue(pool);
   assert.ok(pool.calls.some((call) => call.sql.includes("CREATE TABLE IF NOT EXISTS jarvis_action_queue")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE")));
   assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_pending")));
   assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_lease")));
 });
