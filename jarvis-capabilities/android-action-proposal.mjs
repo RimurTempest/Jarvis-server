@@ -18,8 +18,11 @@ export function isDirectAndroidActionRequest(message) {
   const text = normalizePortuguese(message);
   if (!text || text.length > 4000) return false;
 
-  const imperativeAtStart = /^(?:(?:jarvis|por favor|por gentileza)[,:\s]*)*(?:pode\s+)?(?:abr[ae]|abrir|acesse|acessa|acessar|visite|visitar|ligue|ligar|copie|copiar|va para|vai para)\b/.test(text);
-  const explicitRequest = /\b(quero que voce|preciso que voce|peco que voce)\b.{0,100}\b(abra|abrir|acesse|acessar|visite|ligue|ligar|copie|copiar)\b/.test(text);
+  // A request clause containing explicit negation must never become an action proposal.
+  if (/\\b(?:nao|nunca|jamais)\\s+(?:por favor\\s+)?(?:abr[ae]|abrir|acesse|acessa|acessar|visite|visitar|ligue|ligar|copie|copiar|va para|vai para)\\b/.test(text)) return false;
+
+  const imperativeAtStart = /^(?:(?:jarvis|por favor|por gentileza)[,:\\s]*)*(?:pode\\s+)?(?:abr[ae]|abrir|acesse|acessa|acessar|visite|visitar|ligue|ligar|copie|copiar|va para|vai para)\\b/.test(text);
+  const explicitRequest = /\\b(quero que voce|preciso que voce|peco que voce)\\b.{0,100}\\b(abra|abrir|acesse|acessar|visite|ligue|ligar|copie|copiar)\\b/.test(text);
   return imperativeAtStart || explicitRequest;
 }
 
