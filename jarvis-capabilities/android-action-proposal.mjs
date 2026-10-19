@@ -53,9 +53,56 @@ const ACTION_TOOL = {
 
 const ACTION_FIELDS = ["packageName", "url", "phoneNumber", "setting", "text"];
 
+function proposalMatchesUserMessage(action, message) {
+  const raw = String(message ?? "");
+  const normalized = normalizePortuguese(raw);
+
+  switch (action.type) {
+    case "open_app":
+      // Never trust a model-inferred package name. It must be present verbatim.
+      return normalized.includes(String(action.packageName ?? "").toLowerCase());
+    case "open_url": {
+      const suppliedUrls = raw.match(/https?:\\/\\/[^\\s<>"']+/gi) || [];
+      let proposed;
+      try { proposed = new URL(action.url); } catch { return false; }
+      return suppliedUrls.some((rawUrl) => {
+        let supplied;
+        try { supplied = new URL(rawUrl.replace(/[),.!?;]+$/, "")); } catch { return false; }
+        return supplied.protocol === proposed.protocol &&
+          supplied.hostname.toLowerCase() === proposed.hostname.toLowerCase() &&
+          supplied.port === proposed.port &&
+          supplied.pathname === proposed.pathname &&
+          supplied.search === proposed.search &&
+          supplied.hash === proposed.hash;
+      });
+    }
+    case "dial_number": {
+      const suppliedDigits = raw.replace(/\\D/g, "");
+      const proposedDigits = String(action.phoneNumber ?? "").replace(/\\D/g, "");
+      return proposedDigits.length >= 4 && suppliedDigits.includes(proposedDigits);
+    }
+    case "copy_text":
+      return Boolean(action.text) && normalized.includes(normalizePortuguese(action.text));
+    case "open_settings": {
+      const settingTerms = {
+        wifi: /\\bwi ?fi\\b/,
+        bluetooth: /\\bbluetooth\\b/,
+        display: /\\b(tela|visor|brilho|display)\\b/,
+        sound: /\\b(som|volume|audio)\\b/,
+        accessibility: /\\b(acessibilidade)\\b/,
+        app_details: /\\b(detalhes do app|detalhes do aplicativo|informacoes do app)\\b/,
+        default_apps: /\\b(aplicativos padrao|apps padrao)\\b/,
+      };
+      return Boolean(settingTerms[action.setting]?.test(normalized));
+    }
+    default:
+      return false;
+  }
+}
+
 /**
  * Uses the configured provider only as an intent parser. Its output is
- * untrusted: the strict action protocol is the actual validation boundary.
+ * untrusted: protocol validation and user-message binding are both required.
  */
 export async function proposeAndroidAction(provider, message) {
   if (!provider?.client?.chat?.completions?.create || typeof provider.model !== "string") {
@@ -108,9 +155,11 @@ export async function proposeAndroidAction(provider, message) {
   }
 
   try {
-    return validateAndroidAction(candidate);
+    const validated = validateAndroidAction(candidate);
+    if (!proposalMatchesUserMessage(validated, message)) return null;
+    return validated;
   } catch {
-    // Invalid model output must never enter the queue.
+    // Invalid or ungrounded model output must never enter the queue.
     return null;
   }
 }
