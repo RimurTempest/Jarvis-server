@@ -15,6 +15,7 @@ import { buildCapabilityPromptContext } from "./jarvis-capabilities/capability-p
 import { prepareSelfImprovementDraft } from "./jarvis-capabilities/self-improvement-pipeline.mjs";
 import { initializeSelfImprovementRunQueue, enqueueSelfImprovementRun, updateSelfImprovementRun, listSelfImprovementRuns } from "./jarvis-capabilities/self-improvement-run-queue.mjs";
 import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improvement-worker.mjs";
+import { inspectDraftPullRequestValidation } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -824,6 +825,40 @@ app.get("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Falha ao consultar propostas de autoaperfeiçoamento:", error?.name || "Error");
     return res.status(503).json({ error: "Não foi possível consultar as propostas." });
+  }
+});
+
+app.get("/api/capabilities/:id/proposals/:runId/validation", requireAuth, async (req, res) => {
+  const capabilityId = typeof req.params.id === "string" ? req.params.id : "";
+  const runId = typeof req.params.runId === "string" ? req.params.runId : "";
+  if (!capabilityId || capabilityId.length > 100 || !/^[0-9a-f-]{36}$/i.test(runId)) {
+    return res.status(400).json({ error: "Identificadores de capacidade ou execução inválidos." });
+  }
+  const token = process.env.JARVIS_GITHUB_TOKEN;
+  if (typeof token !== "string" || token.trim().length < 20) {
+    return res.status(503).json({ error: "A verificação de CI não está configurada." });
+  }
+  try {
+    await initializeDatabase();
+    const result = await pool.query(
+      "SELECT state, repository, pull_request_number, head_revision FROM jarvis_self_improvement_runs WHERE id = $1 AND capability_id = $2",
+      [runId, capabilityId],
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "Execução não encontrada." });
+    const run = result.rows[0];
+    if (run.state !== "draft_pr_created" || !run.pull_request_number || !run.head_revision) {
+      return res.status(409).json({ error: "A proposta ainda não possui uma revisão de PR pronta para validação." });
+    }
+    const validation = await inspectDraftPullRequestValidation({
+      token,
+      repository: run.repository,
+      pullRequestNumber: run.pull_request_number,
+      expectedHeadSha: run.head_revision,
+    });
+    return res.json({ validation });
+  } catch (error) {
+    console.error("Falha ao verificar CI da proposta:", error?.name || "Error");
+    return res.status(503).json({ error: "Não foi possível verificar os testes da proposta." });
   }
 });
 
