@@ -135,8 +135,12 @@ export async function proposeAndroidAction(provider, message) {
     tool_choice: "auto",
     parallel_tool_calls: false,
     max_completion_tokens: 250,
-    stream: false,
-    timeout: 8000
+    stream: false
+  }, {
+    // OpenAI-compatible SDK request options belong in the second argument;
+    // putting timeout in the JSON body does not enforce a client-side deadline.
+    timeout: 8000,
+    maxRetries: 0
   });
 
   const calls = completion?.choices?.[0]?.message?.tool_calls;
