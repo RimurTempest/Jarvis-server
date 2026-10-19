@@ -91,7 +91,8 @@ export function createAndroidActionEnvelope({ id, capabilityId, action, requeste
     requestedBy: cleanString(requestedBy, "requestedBy", 100),
     action: normalizedAction,
     state: "pending",
-    requiresUserConfirmation,
+    // Every queued action requires a final confirmation on the Android device.
+    requiresUserConfirmation: true,
     createdAt: now.toISOString(),
     expiresAt: expiration.toISOString(),
     completedAt: null,
