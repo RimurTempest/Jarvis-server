@@ -1207,13 +1207,14 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   }
 
   let semanticCapabilityIntent = null;
-  if (providers[0]) {
+  for (const intentProvider of providers) {
     semanticCapabilityIntent = await classifyCapabilityIntent({
-      provider: providers[0],
+      provider: intentProvider,
       message,
       history: priorConversation,
       activeCapabilities: recentCapabilities,
     });
+    if (semanticCapabilityIntent) break;
   }
   const detectedLearningRequest = detectCapabilityLearningRequest(message);
   const semanticLearningRequest = semanticCapabilityIntent?.intent === "create_capability"
