@@ -14,7 +14,7 @@ export function detectCapabilityLearningRequest(message) {
     /^(?:learn\s+to|learn\s+how\s+to)\s+(.+?)\s*[.!?]*$/i,
     /^(?:i\s+want\s+you\s+to\s+learn\s+to)\s+(.+?)\s*[.!?]*$/i,
     /^(?:jarvis[,! ]+)?quero\s+que\s+voc[eê]\s+(?:passe\s+a\s+)?(?:consiga|conseguir|possa|seja\s+capaz\s+de)\s+(.+?)\s*[.!?]*$/i,
-    /^(?:quero\s+que\s+voc[eê]\s+)?(?:adicione|implemente|desenvolva|crie)\s+(?:a\s+)?(?:capacidade|fun[cç][aã]o|recurso)\s+(?:de|para)\s+(.+?)\s*[.!?]*$/i,
+    /^(?:quero\s+que\s+voc[eê]\s+)?(?:adicione|implemente|desenvolva|crie)\s+(?:a\s+|uma\s+)?(?:capacidade|fun[cç][aã]o|recurso)\s+(?:de|para)\s+(.+?)\s*[.!?]*$/i,
     /^(?:quero|preciso)\s+(?:de\s+)?(?:uma\s+)?(?:nova\s+)?(?:capacidade|fun[cç][aã]o|recurso)\s+(?:para|de)\s+(.+?)\s*[.!?]*$/i,
   ];
 
