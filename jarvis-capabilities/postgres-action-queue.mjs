@@ -58,6 +58,7 @@ export async function initializeActionQueue(pool) {
         result = COALESCE(result, '{"ok":false,"message":"Ação legada sem destino de dispositivo."}'::jsonb),
         lease_token_hash = NULL
     WHERE target_device_id IS NULL AND state IN ('pending', 'delivered')`);
+  await pool.query("UPDATE jarvis_action_queue SET target_device_id = 'legacy-unassigned' WHERE target_device_id IS NULL");
   await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN target_device_id SET NOT NULL");
   await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE");
   await pool.query("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE WHERE state IN ('pending', 'delivered')");
