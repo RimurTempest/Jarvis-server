@@ -18,8 +18,10 @@ export function isDirectAndroidActionRequest(message) {
   const text = normalizePortuguese(message);
   if (!text || text.length > 4000) return false;
 
-  // A request clause containing explicit negation must never become an action proposal.
-  if (/\b(?:nao|nunca|jamais)\s+(?:por favor\s+)?(?:abr[ae]|abrir|acesse|acessa|acessar|visite|visitar|ligue|ligar|copie|copiar|va para|vai para)\b/.test(text)) return false;
+  // Conservatively reject action verbs negated anywhere nearby, including
+  // "não quero que você abra" and "não autorizo que ligue". False negatives
+  // are preferable to queuing an action the user may have explicitly refused.
+  if (/\b(?:nao|nunca|jamais)\b.{0,100}\b(?:abr[ae]|abrir|acesse|acessa|acessar|visite|visitar|ligue|ligar|copie|copiar|va para|vai para)\b/.test(text)) return false;
 
   const imperativeAtStart = /^(?:(?:jarvis|por favor|por gentileza)[,:\s]*)*(?:pode\s+)?(?:abr[ae]|abrir|acesse|acessa|acessar|visite|visitar|ligue|ligar|copie|copiar|va para|vai para)\b/.test(text);
   const explicitRequest = /\b(quero que voce|preciso que voce|peco que voce)\b.{0,100}\b(abra|abrir|acesse|acessar|visite|ligue|ligar|copie|copiar)\b/.test(text);
