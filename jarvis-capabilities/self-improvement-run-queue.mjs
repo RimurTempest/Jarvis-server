@@ -5,7 +5,7 @@ const RUN_STATES = Object.freeze([
   "generating",
   "publishing",
   "draft_pr_created",
-  "activated",
+  "merged",
   "failed",
 ]);
 const ACTIVE_STATES = ["queued", "researching", "collecting_context", "generating", "publishing"];
@@ -15,9 +15,9 @@ const TRANSITIONS = Object.freeze({
   researching: new Set(["researching", "collecting_context", "failed"]),
   collecting_context: new Set(["collecting_context", "generating", "failed"]),
   generating: new Set(["generating", "publishing", "failed"]),
-  publishing: new Set(["publishing", "researching", "draft_pr_created", "activated", "failed"]),
+  publishing: new Set(["publishing", "researching", "draft_pr_created", "merged", "failed"]),
   draft_pr_created: new Set(),
-  activated: new Set(),
+  merged: new Set(),
   failed: new Set(["queued"]),
 });
 
@@ -50,7 +50,7 @@ export async function initializeSelfImprovementRunQueue(pool) {
     id UUID PRIMARY KEY,
     capability_id TEXT NOT NULL REFERENCES jarvis_capabilities(id) ON DELETE CASCADE,
     target TEXT NOT NULL DEFAULT 'server',
-    state TEXT NOT NULL CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'activated', 'failed'))
+    state TEXT NOT NULL CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'merged', 'failed'))
     repository TEXT NOT NULL,
     base_branch TEXT NOT NULL,
     base_revision TEXT,
@@ -65,7 +65,7 @@ export async function initializeSelfImprovementRunQueue(pool) {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
   await pool.query("ALTER TABLE jarvis_self_improvement_runs DROP CONSTRAINT IF EXISTS jarvis_self_improvement_runs_state_check");
-  await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD CONSTRAINT jarvis_self_improvement_runs_state_check CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'activated', 'failed'))");
+  await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD CONSTRAINT jarvis_self_improvement_runs_state_check CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'merged', 'failed'))");
   await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS head_revision TEXT");
   await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS target TEXT NOT NULL DEFAULT 'server'");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_self_improvement_runs_capability_created ON jarvis_self_improvement_runs (capability_id, created_at DESC)");
@@ -173,7 +173,7 @@ export async function updateSelfImprovementRun(pool, id, nextState, metadata = {
   const proposalSummary = metadata.proposalSummary === undefined ? null : nonEmpty(metadata.proposalSummary, "proposalSummary", 2000);
   const errorCode = metadata.errorCode === undefined ? null : nonEmpty(metadata.errorCode, "errorCode", 80);
 
-  if (nextState === "draft_pr_created" || nextState === "activated") {
+  if (nextState === "draft_pr_created" || nextState === "merged") {
     if (!Number.isSafeInteger(pullRequestNumber) || !pullRequestUrl || !proposalDigest || !baseRevision || !headRevision) {
       throw new Error("Uma execução concluída exige PR, URL, digest e revisões base/head.");
     }
