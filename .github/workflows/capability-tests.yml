@@ -14,6 +14,10 @@ on:
       - ".github/workflows/capability-tests.yml"
   workflow_dispatch:
 
+concurrency:
+  group: jarvis-capability-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   capability-tests:
     runs-on: ubuntu-latest
