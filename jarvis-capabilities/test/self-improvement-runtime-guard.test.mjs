@@ -74,7 +74,7 @@ test("rolls back only when branch head is exactly the failed merge commit", asyn
     if (url.endsWith("/git/commits/" + mergeSha)) return { payload: { parents: [{ sha: parentSha }] } };
     if (url.endsWith("/git/commits/" + parentSha)) return { payload: { tree: { sha: parentTreeSha } } };
     if (url.endsWith("/git/commits") && method === "POST") return { payload: { sha: revertSha } };
-    if (url.endsWith("/git/ref/heads/main") && method === "PATCH") return { payload: { object: { sha: revertSha } } };
+    if (url.endsWith("/git/refs/heads/main") && method === "PATCH") return { payload: { object: { sha: revertSha } } };
     throw new Error("Unexpected GitHub request: " + method + " " + url);
   });
   const result = await revertMergedCommitSafely({
