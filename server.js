@@ -315,6 +315,7 @@ async function processSelfImprovementRun(run) {
   const result = await prepareSelfImprovementDraft({
     capability,
     provider: providers[0],
+    fallbackProviders: providers.slice(1),
     githubToken: process.env.JARVIS_GITHUB_TOKEN,
     repository: run.repository,
     baseBranch: run.base_branch,
