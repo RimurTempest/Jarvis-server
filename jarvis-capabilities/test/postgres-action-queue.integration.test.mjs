@@ -138,6 +138,11 @@ test("PostgreSQL integration: schema migration, one-time enrollment, device-boun
       [legacySchema],
     );
     assert.equal(column.rows[0].is_nullable, "NO");
+    const confirmationColumn = await legacyPool.query(
+      "SELECT column_default FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'jarvis_action_queue' AND column_name = 'requires_user_confirmation'",
+      [legacySchema],
+    );
+    assert.match(confirmationColumn.rows[0].column_default, /true/i);
   } finally {
     await freshPool?.end();
     await legacyPool?.end();
