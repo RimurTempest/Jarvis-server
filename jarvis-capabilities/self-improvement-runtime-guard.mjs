@@ -131,6 +131,7 @@ export async function revertMergedCommitSafely({
 
   const repoPath = "/repos/" + repository;
   const refPath = repoPath + "/git/ref/heads/" + encodedBranch(baseBranch);
+  const updateRefPath = repoPath + "/git/refs/heads/" + encodedBranch(baseBranch);
   const ref = await githubRequest(fetchImpl, token, refPath);
   if (ref?.object?.sha?.toLowerCase() !== mergeCommitSha.toLowerCase()) {
     return { rolledBack: false, reason: "branch_advanced" };
@@ -154,6 +155,6 @@ export async function revertMergedCommitSafely({
   if (latestRef?.object?.sha?.toLowerCase() !== mergeCommitSha.toLowerCase()) {
     return { rolledBack: false, reason: "branch_advanced", revertCommitSha: revertCommit.sha };
   }
-  await githubRequest(fetchImpl, token, refPath, "PATCH", { sha: revertCommit.sha, force: false });
+  await githubRequest(fetchImpl, token, updateRefPath, "PATCH", { sha: revertCommit.sha, force: false });
   return { rolledBack: true, revertCommitSha: revertCommit.sha, revertedCommitSha: mergeCommitSha };
 }
