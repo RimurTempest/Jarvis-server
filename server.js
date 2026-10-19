@@ -881,6 +881,7 @@ app.post("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
       capabilityId: id,
       repository: target.repository,
       baseBranch: target.baseBranch,
+      target: target.target,
     });
     await recordLearningEvent("self_improvement_run_queued", capability.goal, {
       capabilityId: id,
@@ -891,6 +892,7 @@ app.post("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
       run: {
         id: run.id,
         capabilityId: id,
+        target: run.target,
         state: run.state,
         createdAt: run.created_at,
       },
