@@ -8,7 +8,7 @@ function fakePool({ run = null } = {}) {
     calls,
     async query(sql, params) {
       calls.push({ sql, params });
-      if (sql.startsWith("UPDATE jarvis_self_improvement_runs") && sql.includes("claimed_at <")) return { rowCount: 0, rows: [] };
+      if (sql.startsWith("UPDATE jarvis_self_improvement_runs") && (sql.includes("claimed_at <") || sql.includes("state = 'merged'"))) return { rowCount: 0, rows: [] };
       if (sql.includes("WITH next_run AS")) return { rowCount: run ? 1 : 0, rows: run ? [run] : [] };
       throw new Error("Unexpected query");
     },
@@ -23,7 +23,7 @@ test("claims one queued job and delegates it to the processor", async () => {
   assert.equal(result.claimed, true);
   assert.equal(result.succeeded, true);
   assert.deepEqual(processed, [run]);
-  assert.equal(pool.calls.length, 2);
+  assert.equal(pool.calls.length, 3);
 });
 
 test("handles an empty queue without invoking the processor", async () => {
