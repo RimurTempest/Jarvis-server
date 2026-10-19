@@ -20,6 +20,8 @@ The owner describes a capability in natural language (for example, sending email
 
 `self-improvement-proposal-policy.mjs` is a fail-closed validation gate for a future implementation worker. It validates source revision identifiers, file paths, duplicate paths, payload sizes, test-plan presence, and obvious secret material. It produces a deterministic SHA-256 digest for the exact proposed file set.
 
+`self-improvement-code-generator.mjs` can turn a supplied goal, research summary, and bounded set of repository files into a proposed file set using the configured AI client. It treats research and source text as untrusted data, binds the request ID and base revision from trusted caller input, disables provider retries for the generation call, and rejects the result unless the proposal policy passes. It does not fetch its own repository context, perform web research itself, execute generated tests, or publish anything by itself.
+
 The policy marks changes outside `jarvis-capabilities/`, elevated/high-risk proposals, and sensitive code surfaces for human review. Secret files and unsafe paths are rejected.
 
 ## Explicit non-capabilities
