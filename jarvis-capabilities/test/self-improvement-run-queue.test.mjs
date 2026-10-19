@@ -70,6 +70,52 @@ test("self-improvement queue persists jobs, enforces one active job, and claims 
   }
 });
 
+test("stale merged jobs become unverified instead of being merged a second time", { skip: !databaseUrl }, async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 3 });
+  const capabilityId = "test-capability-stale-merge";
+  const runId = "33333333-3333-4333-8333-333333333333";
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS jarvis_capabilities (
+      id TEXT PRIMARY KEY,
+      goal TEXT NOT NULL DEFAULT 'integration test capability',
+      state TEXT NOT NULL DEFAULT 'researching' CHECK (state IN ('requested', 'researching', 'prepared', 'testing', 'validated', 'blocked')),
+      record JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    await pool.query(
+      "INSERT INTO jarvis_capabilities (id, goal, state, record) VALUES ($1, $2, 'researching', '{}'::jsonb) ON CONFLICT (id) DO NOTHING",
+      [capabilityId, "stale merge test"],
+    );
+    await initializeSelfImprovementRunQueue(pool);
+    await pool.query("DELETE FROM jarvis_self_improvement_runs WHERE capability_id = $1", [capabilityId]);
+    await enqueueSelfImprovementRun(pool, {
+      id: runId, capabilityId, repository: "example/repo", baseBranch: "main", target: "server",
+    });
+    await claimNextSelfImprovementRun(pool);
+    await updateSelfImprovementRun(pool, runId, "collecting_context");
+    await updateSelfImprovementRun(pool, runId, "generating");
+    await updateSelfImprovementRun(pool, runId, "publishing");
+    await updateSelfImprovementRun(pool, runId, "merged", {
+      baseRevision: "a".repeat(40),
+      headRevision: "c".repeat(40),
+      proposalDigest: "b".repeat(64),
+      pullRequestNumber: 43,
+      pullRequestUrl: "https://github.com/example/repo/pull/43",
+      proposalSummary: "Stale merge test",
+    });
+    await pool.query("UPDATE jarvis_self_improvement_runs SET updated_at = NOW() - INTERVAL '20 minutes' WHERE id = $1", [runId]);
+    assert.equal(await recoverStaleSelfImprovementRuns(pool, 10), 1);
+    const state = await pool.query("SELECT state, error_code FROM jarvis_self_improvement_runs WHERE id = $1", [runId]);
+    assert.equal(state.rows[0].state, "merge_unverified");
+    assert.equal(state.rows[0].error_code, "runtime_verification_interrupted");
+  } finally {
+    await pool.query("DELETE FROM jarvis_self_improvement_runs WHERE capability_id = $1", [capabilityId]).catch(() => {});
+    await pool.query("DELETE FROM jarvis_capabilities WHERE id = $1", [capabilityId]).catch(() => {});
+    await pool.end();
+  }
+});
+
 test("queue validation rejects malformed identifiers and unsafe branches", async () => {
   const fakePool = { async query() { throw new Error("Should not query"); } };
   await assert.rejects(initializeSelfImprovementRunQueue({}), /Pool PostgreSQL/i);
