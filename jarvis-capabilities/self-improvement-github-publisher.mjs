@@ -26,6 +26,20 @@ function safeSegment(value) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "request";
 }
 
+function escapeMarkdown(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\\/g, "&#92;")
+    .replace(/\[/g, "&#91;")
+    .replace(/\]/g, "&#93;")
+    .replace(/`/g, "&#96;")
+    .replace(/\*/g, "&#42;")
+    .replace(/_/g, "&#95;")
+    .replace(/!/g, "&#33;");
+}
+
 async function githubRequest(fetchImpl, token, path, { method = "GET", body } = {}) {
   const response = await fetchImpl(`${API_ROOT}${path}`, {
     method,
@@ -139,7 +153,7 @@ export async function createDraftSelfImprovementPullRequest({
 
   let pullRequest;
   try {
-    const testPlan = proposal.tests.map((item) => `- ${item}`).join("\n");
+    const testPlan = proposal.tests.map((item) => `- ${escapeMarkdown(item)}`).join("\n");
     const protectedNotice = policy.requiresHumanReview
       ? "\n\n**Human review required:** this proposal touches a protected path or is elevated/high risk."
       : "";
