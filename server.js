@@ -18,6 +18,7 @@ import { initializeSelfImprovementRunQueue, enqueueSelfImprovementRun, updateSel
 import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improvement-worker.mjs";
 import { inspectDraftPullRequestValidation, fetchSelfImprovementCiFailureDiagnostics } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
 import { runSelfImprovementCiRepairLoop } from "./jarvis-capabilities/self-improvement-ci-repair.mjs";
+import { mergeValidatedSelfImprovementDraft } from "./jarvis-capabilities/self-improvement-auto-activation.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 
 const { Pool } = pg;
@@ -403,7 +404,40 @@ async function processSelfImprovementRun(run) {
   });
 
   const finalDraft = result.draft;
-  await updateSelfImprovementRun(pool, run.id, "draft_pr_created", {
+  let finalState = "draft_pr_created";
+  let mergeCommitSha = null;
+  const autoMergeEnabled = process.env.JARVIS_SELF_IMPROVEMENT_AUTO_MERGE === "true" &&
+    run.target === "server" &&
+    typeof process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN === "string" &&
+    process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN.trim().length >= 20;
+  if (autoMergeEnabled) {
+    try {
+      const mergeResult = await mergeValidatedSelfImprovementDraft({
+        enabled: true,
+        token: process.env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN,
+        repository: run.repository,
+        pullRequestNumber: finalDraft.pullRequest.number,
+        baseBranch: run.base_branch,
+        expectedHeadSha: finalDraft.pullRequest.commitSha,
+        validation: result.validation,
+        requiresHumanReview: finalDraft.requiresHumanReview,
+        changedPaths: finalDraft.changedPaths,
+      });
+      if (mergeResult.merged === true) {
+        finalState = "merged";
+        mergeCommitSha = mergeResult.mergeCommitSha;
+      }
+    } catch (error) {
+      console.error("Auto-merge recusado após validação independente (" + (error?.name || "Error") + "). A proposta permanecerá para revisão.");
+      await recordLearningEvent(
+        "self_improvement_auto_merge_failed",
+        "A validação CI passou, mas o auto-merge não foi concluído; a proposta requer revisão.",
+        { capabilityId: run.capability_id, runId: run.id, pullRequestNumber: finalDraft.pullRequest.number },
+      ).catch(() => {});
+    }
+  }
+
+  await updateSelfImprovementRun(pool, run.id, finalState, {
     baseRevision: finalDraft.baseRevision,
     headRevision: finalDraft.pullRequest.commitSha,
     proposalDigest: finalDraft.proposalDigest,
@@ -411,24 +445,32 @@ async function processSelfImprovementRun(run) {
     pullRequestUrl: finalDraft.pullRequest.url,
     proposalSummary: finalDraft.summary,
   });
-  await recordLearningEvent("self_improvement_draft_created", finalDraft.summary, {
-    capabilityId: run.capability_id,
-    runId: run.id,
-    pullRequestNumber: finalDraft.pullRequest.number,
-    pullRequestUrl: finalDraft.pullRequest.url,
-    baseRevision: finalDraft.baseRevision,
-    proposalDigest: finalDraft.proposalDigest,
-    requiresHumanReview: finalDraft.requiresHumanReview,
-    repairAttempts: result.repairAttempts,
-    ciValidated: result.validation.ready === true,
-  });
+  await recordLearningEvent(
+    finalState === "merged" ? "self_improvement_merged" : "self_improvement_draft_created",
+    finalState === "merged"
+      ? "Uma proposta de baixo risco foi mesclada após validação CI independente; o deploy em produção ainda não foi confirmado."
+      : finalDraft.summary,
+    {
+      capabilityId: run.capability_id,
+      runId: run.id,
+      pullRequestNumber: finalDraft.pullRequest.number,
+      pullRequestUrl: finalDraft.pullRequest.url,
+      baseRevision: finalDraft.baseRevision,
+      proposalDigest: finalDraft.proposalDigest,
+      requiresHumanReview: finalDraft.requiresHumanReview,
+      repairAttempts: result.repairAttempts,
+      ciValidated: result.validation.ready === true,
+      mergeCommitSha,
+      productionDeploymentVerified: false,
+    },
+  );
 }
 
 async function handleSelfImprovementRunFailure(run, error) {
   try {
     const current = await pool.query("SELECT state FROM jarvis_self_improvement_runs WHERE id = $1", [run.id]);
     const state = current.rows[0]?.state;
-    if (state && !["draft_pr_created", "failed"].includes(state)) {
+    if (state && !["draft_pr_created", "merged", "failed"].includes(state)) {
       const safeCodes = new Set([
         "ci_repair_exhausted",
         "ci_validation_timeout",
@@ -1088,9 +1130,11 @@ app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => 
       service: "JARVIS",
       notifications: result.rows.map((row) => ({
         ...row,
-        notificationType: row.state === "draft_pr_created"
-          ? "proposal_ready_for_review"
-          : row.state === "failed"
+        notificationType: row.state === "merged"
+          ? "proposal_merged"
+          : row.state === "draft_pr_created"
+            ? "proposal_ready_for_review"
+            : row.state === "failed"
             ? "proposal_failed"
             : "proposal_progress",
       })),
