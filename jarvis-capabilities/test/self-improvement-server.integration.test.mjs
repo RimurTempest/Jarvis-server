@@ -228,9 +228,12 @@ test("self-improvement notifications return safe status metadata and require aut
   await pool.query("DELETE FROM jarvis_self_improvement_runs WHERE id = $1", [runId]);
   await pool.query(
     `INSERT INTO jarvis_self_improvement_runs
-      (id, capability_id, target, state, repository, base_branch, pull_request_number, pull_request_url, proposal_summary)
+      (id, capability_id, target, state, repository, base_branch, pull_request_number, pull_request_url, proposal_summary,
+       merge_commit_sha, runtime_revision, rollback_revision)
      VALUES ($1, $2, 'android', 'draft_pr_created', 'RimurTempest/Jarvis-server', 'main', 999,
-       'https://github.com/RimurTempest/Jarvis-server/pull/999', 'Proposta de teste')`,
+       'https://github.com/RimurTempest/Jarvis-server/pull/999', 'Proposta de teste',
+       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+       'cccccccccccccccccccccccccccccccccccccccc')`,
     [runId, capabilityId],
   );
 
@@ -245,6 +248,9 @@ test("self-improvement notifications return safe status metadata and require aut
   assert.equal(notification.state, "draft_pr_created");
   assert.equal(notification.notificationType, "proposal_ready_for_review");
   assert.equal(notification.summary, "Proposta de teste");
+  assert.equal(notification.mergeCommitSha, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(notification.runtimeRevision, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+  assert.equal(notification.rollbackRevision, "cccccccccccccccccccccccccccccccccccccccc");
   assert.equal(Object.hasOwn(notification, "token"), false);
   assert.equal(Object.hasOwn(notification, "githubToken"), false);
 
