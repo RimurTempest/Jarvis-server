@@ -451,7 +451,7 @@ async function processSelfImprovementRun(run) {
       if (mergeResult.merged === true) {
         mergeCommitSha = mergeResult.mergeCommitSha;
         finalState = "merged";
-        await updateSelfImprovementRun(pool, run.id, "merged", runMetadata);
+        await updateSelfImprovementRun(pool, run.id, "merged", { ...runMetadata, mergeCommitSha });
         await recordLearningEvent(
           "self_improvement_merged",
           "Uma proposta de baixo risco foi mesclada após validação CI independente; verificando a revisão implantada em produção.",
@@ -515,6 +515,8 @@ async function processSelfImprovementRun(run) {
   const persistedRunMetadata = {
     ...runMetadata,
     ...(runtimeRevision ? { runtimeRevision } : {}),
+    ...(mergeCommitSha ? { mergeCommitSha } : {}),
+    ...(rollbackCommitSha ? { rollbackRevision: rollbackCommitSha } : {}),
     ...(finalState === "merge_unverified" && runtimeVerificationReason
       ? { errorCode: runtimeVerificationReason.slice(0, 80) }
       : {}),
@@ -1224,6 +1226,7 @@ app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => 
     const result = await pool.query(
       `SELECT run.id, run.capability_id AS "capabilityId", capability.goal,
               run.target, run.state, run.repository, run.runtime_revision AS "runtimeRevision",
+              run.merge_commit_sha AS "mergeCommitSha", run.rollback_revision AS "rollbackRevision",
               run.pull_request_number AS "pullRequestNumber",
               run.pull_request_url AS "pullRequestUrl",
               run.proposal_summary AS "summary",
