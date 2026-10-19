@@ -938,13 +938,13 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   try {
     proposedAndroidAction = await proposeAndroidAction(providers[0], message);
   } catch {
-    console.warn("Classificação de ação Android indisponível; seguindo com o chat normal.");
-    if (providers.length > 1) {
-      try {
-        proposedAndroidAction = await proposeAndroidAction(providers[1], message);
-      } catch {
-        // The normal conversational response remains available if action parsing fails.
-      }
+    console.warn("Classificação de ação Android indisponível; tentando o provedor alternativo.");
+  }
+  if (!proposedAndroidAction && providers.length > 1) {
+    try {
+      proposedAndroidAction = await proposeAndroidAction(providers[1], message);
+    } catch {
+      // The normal conversational response remains available if action parsing fails.
     }
   }
 
