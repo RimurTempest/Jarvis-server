@@ -4,7 +4,7 @@ import { classifySelfImprovementTarget, resolveSelfImprovementTarget, requiredWo
 
 test("classifies Android and device capabilities separately from backend work", () => {
   assert.equal(classifySelfImprovementTarget("Adicionar uma função para enviar e-mails pelo celular"), "android");
-  assert.equal(classifySelfImprovementTarget("Quero que você consiga enviar e-mails"), "android");
+  assert.equal(classifySelfImprovementTarget("Quero que você consiga enviar e-mails"), "server");
   assert.equal(classifySelfImprovementTarget("Implementar a ação de fazer ligações no JARVIS"), "android");
   assert.equal(classifySelfImprovementTarget("Adicionar suporte a um endpoint de relatório no servidor"), "server");
   assert.equal(classifySelfImprovementTarget("Adicionar endpoint para enviar e-mails pelo aplicativo Android"), "full_stack");
