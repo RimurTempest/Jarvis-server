@@ -70,15 +70,17 @@ export function resolveSelfImprovementTarget(goal, env = process.env) {
  * Android repositories use their own build/test workflow names. An empty or
  * malformed override is rejected rather than falling back to server checks.
  */
-export function requiredWorkflowsForRepository(repository, env = process.env) {
+export function requiredWorkflowsForTarget(target, env = process.env) {
   let raw;
-  if (repository === env.JARVIS_FULL_STACK_REPOSITORY) {
+  if (target === "full_stack") {
     raw = env.JARVIS_FULL_STACK_REQUIRED_WORKFLOWS ||
       "JARVIS Capability Tests,JARVIS Android Build and Tests";
-  } else if (repository === env.JARVIS_ANDROID_REPOSITORY) {
+  } else if (target === "android") {
     raw = env.JARVIS_ANDROID_REQUIRED_WORKFLOWS || "JARVIS Android Build and Tests";
-  } else {
+  } else if (target === "server") {
     return null;
+  } else {
+    throw new TypeError("target inválido para seleção de workflows.");
   }
   if (typeof raw !== "string" || raw.length > 1000) {
     throw new TypeError("Configuração de workflows obrigatórios inválida.");
