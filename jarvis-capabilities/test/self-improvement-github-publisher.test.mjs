@@ -127,3 +127,18 @@ test("validates repository, branch, and token before network access", async () =
   }), /baseBranch/);
   assert.equal(calls.length, 0);
 });
+
+test("escapes untrusted Markdown in test descriptions before publishing", async () => {
+  const { fetchImpl, calls } = fakeFetch();
+  await createDraftSelfImprovementPullRequest({
+    token: "x".repeat(40),
+    repository: "example/repo",
+    baseBranch: "main",
+    proposal: proposal({ tests: ["[click](https://evil.example)"] }),
+    fetchImpl,
+  });
+  const pullRequestCall = calls.find((call) => call.url.endsWith("/pulls"));
+  const body = JSON.parse(pullRequestCall.options.body).body;
+  assert.match(body, /&#91;click&#93;/);
+  assert.doesNotMatch(body, /\[click\]\(https:\/\/evil\.example\)/);
+});
