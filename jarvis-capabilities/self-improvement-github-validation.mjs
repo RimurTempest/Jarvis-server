@@ -96,7 +96,7 @@ export async function inspectDraftPullRequestValidation({
     const latest = matches[0];
     if (!latest) {
       reasons.push(`Falta uma execução de "${name}" para esta revisão.`);
-      return { name, status: "missing", conclusion: null, runUrl: null };
+      return { name, status: "missing", conclusion: null, runUrl: null, runId: null };
     }
     const status = typeof latest.status === "string" ? latest.status : "unknown";
     const conclusion = typeof latest.conclusion === "string" ? latest.conclusion : null;
@@ -108,15 +108,25 @@ export async function inspectDraftPullRequestValidation({
       status,
       conclusion,
       runUrl: typeof latest.html_url === "string" ? latest.html_url : null,
+      runId: Number.isSafeInteger(latest.id) ? latest.id : null,
       headSha: latest.head_sha,
     };
   });
 
   const requiredNames = new Set(requiredWorkflows);
   const extraNames = [...new Set(relevantRuns.map((run) => run.name).filter((name) => typeof name === "string" && !requiredNames.has(name)))];
+  const extraChecks = [];
   for (const name of extraNames) {
     const latest = relevantRuns.filter((run) => run.name === name)
       .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
+    const extra = {
+      name,
+      status: typeof latest?.status === "string" ? latest.status : "missing",
+      conclusion: typeof latest?.conclusion === "string" ? latest.conclusion : null,
+      runUrl: typeof latest?.html_url === "string" ? latest.html_url : null,
+      runId: Number.isSafeInteger(latest?.id) ? latest.id : null,
+    };
+    extraChecks.push(extra);
     if (!latest || latest.status !== "completed" || !["success", "skipped"].includes(latest.conclusion)) {
       reasons.push(`O workflow adicional "${name}" não terminou com sucesso.`);
     }
@@ -125,6 +135,8 @@ export async function inspectDraftPullRequestValidation({
   return {
     ready: reasons.length === 0 && checks.length === requiredWorkflows.length,
     reasons,
+    checks,
+    extraChecks,
     pullRequest: {
       number: pullRequestNumber,
       url: typeof pr?.html_url === "string" ? pr.html_url : null,
