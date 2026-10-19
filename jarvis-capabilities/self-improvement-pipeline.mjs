@@ -47,6 +47,7 @@ function formatTrustedResearch(result) {
 export async function prepareSelfImprovementDraft({
   capability,
   provider,
+  fallbackProviders = [],
   githubToken,
   repository,
   baseBranch,
@@ -86,19 +87,42 @@ export async function prepareSelfImprovementDraft({
     throw new Error("O coletor de contexto não retornou uma revisão válida.");
   }
 
+  if (!Array.isArray(fallbackProviders)) throw new TypeError("fallbackProviders deve ser uma lista.");
+  const generatorProviders = [provider, ...fallbackProviders];
+  if (generatorProviders.some((candidate) => !candidate?.client || typeof candidate.model !== "string" || !candidate.model.trim())) {
+    throw new TypeError("Provedor alternativo de IA inválido.");
+  }
+
   await onStage("generating");
-  const generated = await generateProposal({
-    client: provider.client,
-    model: provider.model,
-    requestId,
-    baseRevision: context.baseRevision,
-    goal,
-    research,
-    contextFiles: context.contextFiles,
-    riskLevel: "standard",
-  });
-  if (!generated?.validation?.ok || !generated?.proposal || !generated?.summary) {
-    throw new Error("A proposta de código não passou pela política de segurança.");
+  let generated = null;
+  let lastGenerationError = null;
+  for (const candidate of generatorProviders) {
+    try {
+      const attempt = await generateProposal({
+        client: candidate.client,
+        model: candidate.model,
+        requestId,
+        baseRevision: context.baseRevision,
+        goal,
+        research,
+        contextFiles: context.contextFiles,
+        riskLevel: "standard",
+      });
+      if (!attempt?.validation?.ok || !attempt?.proposal || !attempt?.summary) {
+        throw new Error("A proposta não passou pela política de segurança.");
+      }
+      generated = attempt;
+      break;
+    } catch (error) {
+      lastGenerationError = error;
+    }
+  }
+  if (!generated) {
+    throw new Error(
+      generatorProviders.length > 1
+        ? "A geração falhou com todos os provedores disponíveis; nenhuma proposta foi publicada."
+        : (lastGenerationError?.message || "A proposta de código não passou pela política de segurança."),
+    );
   }
 
   await onStage("publishing");
