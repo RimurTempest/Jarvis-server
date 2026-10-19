@@ -1,6 +1,5 @@
 const DEFAULT_BASE_BRANCH = "main";
 const ANDROID_TARGET_PATTERN = /(?:\bandroid\b|\bapk\b|\bcelular(?:es)?\b|\btelefone(?:s)?\b|\bchamad(?:a|as|o|os)\b|\bliga(?:c(?:ao|oes)|ç(?:ão|ões)|r)\b|\bdiscador\b|\baplicativos?\b|\bapps?\b|\bnotifica(?:ção|ções|c[aã]o|c[aã]oes)\b|\bpermiss(?:ão|ões|ao|oes)\b|\btelas?\b|\bwidgets?\b|\bbolha flutuante\b|\binstalar no telefone\b|\bwhatsapp\b|\bcontatos?\b|\bc[aâ]mera\b|\bfotos?\b|\bsms\b)/i;
-const EMAIL_ACTION_PATTERN = /\b(?:e-?mails?|email|enviar|mandar|escrever|compartilhar)\b/i;
 const SERVER_TARGET_PATTERN = /\b(?:server|backend|back-end|servidor|api|endpoint|webhook|banco de dados|database|infraestrutura|rota de servidor)\b/i;
 
 function validRepository(value) {
@@ -26,7 +25,9 @@ export function classifySelfImprovementTarget(goal) {
   if (android && server) return "full_stack";
   if (android) return "android";
   if (server) return "server";
-  return EMAIL_ACTION_PATTERN.test(goal) ? "android" : "server";
+  // Ação de e-mail, por si só, não é uma capacidade Android: o envio exige
+  // integração de backend, salvo quando o usuário menciona explicitamente o app/celular.
+  return "server";
 }
 
 export function resolveSelfImprovementTarget(goal, env = process.env) {
