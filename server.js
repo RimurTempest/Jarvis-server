@@ -976,7 +976,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
           open_settings: `abrir as configurações de ${proposedAndroidAction.setting}`,
           copy_text: "copiar o texto solicitado",
         };
-        actionResponse = `Preparei a ação para ${descriptions[proposedAndroidAction.type] || "o pedido informado"} e a enviei para a fila do dispositivo vinculado. Ela ainda não foi executada: confirme a solicitação no Android para continuar. A solicitação expira em aproximadamente dois minutos (ID ${queued.id}).`;
+        actionResponse = `Preparei a ação para ${descriptions[proposedAndroidAction.type] || "o pedido informado"} e a enviei para a fila do dispositivo vinculado. Ela ainda não foi executada: abra o J.A.R.V.I.S. no celular e confirme a solicitação na tela. O aplicativo precisa estar em primeiro plano para receber a ação. A solicitação expira em aproximadamente dois minutos (ID ${queued.id}).`;
       }
     } catch (error) {
       console.error("Falha ao enfileirar ação Android:", error?.message || "erro desconhecido");
