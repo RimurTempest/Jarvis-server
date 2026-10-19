@@ -104,7 +104,7 @@ test("stale merged jobs become unverified instead of being merged a second time"
       pullRequestUrl: "https://github.com/example/repo/pull/43",
       proposalSummary: "Stale merge test",
     });
-    await pool.query("UPDATE jarvis_self_improvement_runs SET updated_at = NOW() - INTERVAL '20 minutes' WHERE id = $1", [runId]);
+    await pool.query("UPDATE jarvis_self_improvement_runs SET updated_at = NOW() - INTERVAL '21 minutes' WHERE id = $1", [runId]);
     assert.equal(await recoverStaleSelfImprovementRuns(pool, 10), 1);
     const state = await pool.query("SELECT state, error_code FROM jarvis_self_improvement_runs WHERE id = $1", [runId]);
     assert.equal(state.rows[0].state, "merge_unverified");
