@@ -16,7 +16,7 @@ import { prepareSelfImprovementDraft } from "./jarvis-capabilities/self-improvem
 import { initializeSelfImprovementRunQueue, enqueueSelfImprovementRun, updateSelfImprovementRun, listSelfImprovementRuns } from "./jarvis-capabilities/self-improvement-run-queue.mjs";
 import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improvement-worker.mjs";
 import { inspectDraftPullRequestValidation } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
-import { resolveSelfImprovementTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
+import { resolveSelfImprovementTarget, requiredWorkflowsForRepository } from "./jarvis-capabilities/self-improvement-target.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -845,11 +845,13 @@ app.get("/api/capabilities/:id/proposals/:runId/validation", requireAuth, async 
     if (run.state !== "draft_pr_created" || !run.pull_request_number || !run.head_revision) {
       return res.status(409).json({ error: "A proposta ainda não possui uma revisão de PR pronta para validação." });
     }
+    const requiredWorkflows = requiredWorkflowsForRepository(run.repository);
     const validation = await inspectDraftPullRequestValidation({
       token,
       repository: run.repository,
       pullRequestNumber: run.pull_request_number,
       expectedHeadSha: run.head_revision,
+      ...(requiredWorkflows ? { requiredWorkflows } : {}),
     });
     return res.json({ validation });
   } catch (error) {
