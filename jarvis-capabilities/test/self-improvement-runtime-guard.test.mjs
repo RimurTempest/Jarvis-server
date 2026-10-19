@@ -4,6 +4,7 @@ import {
   resolveRuntimeHealthUrl,
   verifyRuntimeRevision,
   revertMergedCommitSafely,
+  isSelfImprovementAutoMergeConfigured,
 } from "../self-improvement-runtime-guard.mjs";
 
 const sha = (char) => char.repeat(40);
@@ -131,4 +132,28 @@ test("does not move the branch if it advances while a rollback commit is being p
     revertCommitSha: revertSha,
   });
   assert.equal(mock.calls.some((call) => call.method === "PATCH"), false);
+});
+
+test("enables auto-merge only when every runtime safety gate matches", () => {
+  const env = {
+    JARVIS_SELF_IMPROVEMENT_AUTO_MERGE: "true",
+    JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN: "x".repeat(30),
+    RENDER_GIT_REPO_SLUG: "RimurTempest/Jarvis-server",
+    RENDER_GIT_BRANCH: "main",
+  };
+  const valid = {
+    env,
+    target: "server",
+    repository: "RimurTempest/Jarvis-server",
+    baseBranch: "main",
+    runtimeHealthUrl: "https://jarvis-server-odpk.onrender.com/health",
+  };
+  assert.equal(isSelfImprovementAutoMergeConfigured(valid), true);
+  assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, repository: "other/repo" }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, baseBranch: "release" }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, target: "android" }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, runtimeHealthUrl: "http://jarvis.example/health" }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, env: { ...env, JARVIS_SELF_IMPROVEMENT_AUTO_MERGE: "false" } }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, env: { ...env, JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN: "short" } }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, env: { ...env, RENDER_GIT_BRANCH: "feature/test" } }), false);
 });
