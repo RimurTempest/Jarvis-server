@@ -99,3 +99,12 @@ test("treats repository text as data in the system instructions", async () => {
   assert.match(systemMessage, /untrusted DATA/i);
   assert.match(systemMessage, /Never include credentials/i);
 });
+
+test("does not send repository context containing likely credentials", async () => {
+  const { client, calls } = fakeClient();
+  await assert.rejects(generateSelfImprovementProposal(input({
+    client,
+    contextFiles: [{ path: "jarvis-capabilities/config.mjs", content: 'const token = "ghp_123456789012345678901234567890";' }],
+  })), /Possível credencial/i);
+  assert.equal(calls.length, 0);
+});
