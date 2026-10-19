@@ -446,7 +446,7 @@ async function processSelfImprovementRun(run) {
           repository: run.repository,
           pullRequestNumber: finalDraft.pullRequest.number,
           expectedHeadSha: finalDraft.pullRequest.commitSha,
-          requiredWorkflows: requiredWorkflowsForTarget(run.target),
+          requiredWorkflows: requiredWorkflowsForTarget(run.target) || undefined,
         }),
         requiresHumanReview: finalDraft.requiresHumanReview,
         changedPaths: finalDraft.changedPaths,
