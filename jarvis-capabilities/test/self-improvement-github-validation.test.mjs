@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectDraftPullRequestValidation, REQUIRED_SELF_IMPROVEMENT_WORKFLOWS } from "../self-improvement-github-validation.mjs";
+import { inspectDraftPullRequestValidation, fetchSelfImprovementCiFailureDiagnostics, REQUIRED_SELF_IMPROVEMENT_WORKFLOWS } from "../self-improvement-github-validation.mjs";
 
 const sha = "a".repeat(40);
 const workflows = REQUIRED_SELF_IMPROVEMENT_WORKFLOWS;
@@ -82,6 +82,47 @@ test("requires the PR to remain a draft", async () => {
   assert.match(result.reasons.join(" "), /estado draft/i);
 });
 
+test("collects failed job and step names as bounded CI repair diagnostics", async () => {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url.endsWith("/actions/runs/42/jobs?per_page=100")) {
+      return response(200, {
+        jobs: [{
+          id: 99,
+          name: "Unit tests",
+          conclusion: "failure",
+          steps: [
+            { name: "Checkout", conclusion: "success" },
+            { name: "Run tests", conclusion: "failure" },
+          ],
+        }],
+      });
+    }
+    if (url.endsWith("/actions/jobs/99/logs")) return { ok: false, status: 404 };
+    throw new Error("Unexpected URL");
+  };
+  const diagnostics = await fetchSelfImprovementCiFailureDiagnostics({
+    token: "x".repeat(40),
+    repository: "example/repo",
+    validation: {
+      checks: [{
+        name: "JARVIS Capability Tests",
+        status: "completed",
+        conclusion: "failure",
+        runId: 42,
+        runUrl: "https://github.com/example/repo/actions/runs/42",
+      }],
+      extraChecks: [],
+    },
+    fetchImpl,
+  });
+  assert.match(diagnostics, /JARVIS Capability Tests/);
+  assert.match(diagnostics, /Unit tests/);
+  assert.match(diagnostics, /Run tests/);
+  assert.equal(calls.length, 2);
+});
+
 test("validates input before network access", async () => {
   const { fetchImpl, calls } = fakeFetch();
   await assert.rejects(inspectDraftPullRequestValidation(input({ token: "short", fetchImpl })), /Token do GitHub/i);
@@ -103,4 +144,6 @@ test("fails closed when an additional workflow failed on the same PR revision", 
   const result = await inspectDraftPullRequestValidation(input({ fetchImpl }));
   assert.equal(result.ready, false);
   assert.match(result.reasons.join(" "), /workflow adicional/i);
+  assert.equal(result.extraChecks[0].name, "Extra Security Scan");
+  assert.equal(result.extraChecks[0].runId, 99);
 });
