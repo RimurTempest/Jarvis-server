@@ -509,10 +509,13 @@ async function processSelfImprovementRun(run) {
     }
   }
 
+  const persistedRunMetadata = finalState === "merge_unverified" && runtimeVerificationReason
+    ? { ...runMetadata, errorCode: runtimeVerificationReason.slice(0, 80) }
+    : runMetadata;
   if (finalState !== "draft_pr_created") {
-    await updateSelfImprovementRun(pool, run.id, finalState, runMetadata);
+    await updateSelfImprovementRun(pool, run.id, finalState, persistedRunMetadata);
   } else {
-    await updateSelfImprovementRun(pool, run.id, "draft_pr_created", runMetadata);
+    await updateSelfImprovementRun(pool, run.id, "draft_pr_created", persistedRunMetadata);
   }
 
   const terminalEvents = {
