@@ -20,6 +20,10 @@ on:
       - ".github/workflows/android-enrollment-tests.yml"
   workflow_dispatch:
 
+concurrency:
+  group: jarvis-android-enrollment-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android-enrollment-tests:
     runs-on: ubuntu-latest
