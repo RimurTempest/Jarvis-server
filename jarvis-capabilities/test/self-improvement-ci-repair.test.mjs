@@ -29,6 +29,7 @@ test("creates a bounded repair proposal after a completed CI failure and returns
   const prepared = [];
   const repaired = [];
   let validationCalls = 0;
+  let diagnosticCalls = 0;
   const result = await runSelfImprovementCiRepairLoop({
     capability: { id: "capability-email", goal: "Add email capability safely." },
     maxRepairAttempts: 2,
@@ -43,13 +44,15 @@ test("creates a bounded repair proposal after a completed CI failure and returns
       validationCalls += 1;
       return validationCalls === 1 ? failedValidation : passingValidation;
     },
+    diagnoseFailure: async () => { diagnosticCalls += 1; return "Untrusted CI log excerpt: expected true but received false."; },
     onRepair: async (event) => repaired.push(event),
   });
   assert.equal(result.draft.pullRequest.number, 2);
   assert.equal(result.validation.ready, true);
   assert.equal(result.repairAttempts, 1);
   assert.equal(prepared.length, 2);
-  assert.match(prepared[1].validationFeedback, /JARVIS Capability Tests/);
+  assert.match(prepared[1].validationFeedback, /expected true but received false/);
+  assert.equal(diagnosticCalls, 1);
   assert.equal(repaired.length, 1);
   assert.equal(repaired[0].nextAttempt, 1);
 });
