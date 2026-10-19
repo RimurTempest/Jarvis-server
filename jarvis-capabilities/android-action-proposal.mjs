@@ -152,7 +152,7 @@ export async function proposeAndroidAction(provider, message) {
           "Só chame a ferramenta quando a mensagem pedir claramente uma ação agora.",
           "Nunca infira número de telefone, URL ou texto para copiar que o usuário não forneceu.",
           "Para abrir aplicativos, use somente packageName da lista conhecida: WhatsApp=com.whatsapp, Chrome=com.android.chrome, YouTube=com.google.android.youtube, Gmail=com.google.android.gm, Google Maps=com.google.android.apps.maps, Instagram=com.instagram.android, Facebook=com.facebook.katana, Telegram=org.telegram.messenger, Spotify=com.spotify.music, TikTok=com.zhiliaoapp.musically, Play Store=com.android.vending.",
-          "Só proponha um desses aplicativos se o usuário tiver nomeado claramente o aplicativo; o servidor verificará isso de forma independente. Para qualquer outro aplicativo, exija que o usuário forneça o nome de pacote explícito.";
+          "Só proponha um desses aplicativos se o usuário tiver nomeado claramente o aplicativo; o servidor verificará isso de forma independente. Para qualquer outro aplicativo, exija que o usuário forneça o nome de pacote explícito.",
           "Para abrir configurações, escolha apenas o identificador permitido que corresponda ao pedido explícito.",
           "Se a intenção ou os dados estiverem ambíguos, não chame a ferramenta.",
           "Não execute nem proponha comandos de shell, JavaScript, intents arbitrários ou ações fora da ferramenta."
