@@ -99,4 +99,13 @@ test("final state requires exact PR metadata and errors require safe codes", asy
   };
   await assert.rejects(updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "draft_pr_created", {}), /exige PR/i);
   await assert.rejects(updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "failed", {}), /código de erro/i);
+  const merged = await updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "merged", {
+    baseRevision: "a".repeat(40),
+    headRevision: "c".repeat(40),
+    proposalDigest: "b".repeat(64),
+    pullRequestNumber: 42,
+    pullRequestUrl: "https://github.com/example/repo/pull/42",
+    proposalSummary: "Example capability proposal",
+  });
+  assert.equal(merged.state, "merged");
 });
