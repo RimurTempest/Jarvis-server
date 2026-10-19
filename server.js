@@ -16,7 +16,7 @@ import { prepareSelfImprovementDraft } from "./jarvis-capabilities/self-improvem
 import { initializeSelfImprovementRunQueue, enqueueSelfImprovementRun, updateSelfImprovementRun, listSelfImprovementRuns } from "./jarvis-capabilities/self-improvement-run-queue.mjs";
 import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improvement-worker.mjs";
 import { inspectDraftPullRequestValidation } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
-import { resolveSelfImprovementTarget, requiredWorkflowsForRepository } from "./jarvis-capabilities/self-improvement-target.mjs";
+import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -804,6 +804,7 @@ app.get("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
       proposals: result.map((run) => ({
         id: run.id,
         capabilityId: run.capability_id,
+        target: run.target,
         state: run.state,
         repository: run.repository,
         baseBranch: run.base_branch,
@@ -837,7 +838,7 @@ app.get("/api/capabilities/:id/proposals/:runId/validation", requireAuth, async 
   try {
     await initializeDatabase();
     const result = await pool.query(
-      "SELECT state, repository, pull_request_number, head_revision FROM jarvis_self_improvement_runs WHERE id = $1 AND capability_id = $2",
+      "SELECT state, target, repository, pull_request_number, head_revision FROM jarvis_self_improvement_runs WHERE id = $1 AND capability_id = $2",
       [runId, capabilityId],
     );
     if (!result.rowCount) return res.status(404).json({ error: "Execução não encontrada." });
@@ -845,7 +846,7 @@ app.get("/api/capabilities/:id/proposals/:runId/validation", requireAuth, async 
     if (run.state !== "draft_pr_created" || !run.pull_request_number || !run.head_revision) {
       return res.status(409).json({ error: "A proposta ainda não possui uma revisão de PR pronta para validação." });
     }
-    const requiredWorkflows = requiredWorkflowsForRepository(run.repository);
+    const requiredWorkflows = requiredWorkflowsForTarget(run.target);
     const validation = await inspectDraftPullRequestValidation({
       token,
       repository: run.repository,
@@ -1129,6 +1130,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
             capabilityId: activeCapability.id,
             repository: target.repository,
             baseBranch: target.baseBranch,
+            target: target.target,
           });
           capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: a solicitação foi colocada na fila com o ID ${queuedRun.id}, alvo ${target.target}. O processo pesquisará, criará uma proposta em branch isolada e abrirá um pull request draft. Não afirme que o código foi implementado, testado, instalado ou implantado antes de evidência independente.`;
         } catch (error) {
