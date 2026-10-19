@@ -50,3 +50,37 @@ test("rejects unsupported or malformed model proposals", async () => {
   };
   assert.equal(await proposeAndroidAction(provider, "Jarvis, abra o aplicativo"), null);
 });
+
+test("rejects package names and URLs invented by the model", async () => {
+  const providerFor = (action) => ({
+    model: "test",
+    client: { chat: { completions: { create: async () => ({
+      choices: [{ message: { tool_calls: [{
+        type: "function",
+        function: {
+          name: "propose_android_action",
+          arguments: JSON.stringify({ action: {
+            type: action.type,
+            packageName: action.packageName ?? null,
+            url: action.url ?? null,
+            phoneNumber: action.phoneNumber ?? null,
+            setting: action.setting ?? null,
+            text: action.text ?? null,
+          } })
+        }
+      }] } }]
+    }) } } }
+  });
+
+  assert.equal(await proposeAndroidAction(providerFor({
+    type: "open_app", packageName: "com.whatsapp",
+  }), "Jarvis, abra o WhatsApp"), null);
+
+  assert.equal(await proposeAndroidAction(providerFor({
+    type: "open_url", url: "https://google.com/",
+  }), "Jarvis, abra o Google"), null);
+
+  assert.equal(await proposeAndroidAction(providerFor({
+    type: "dial_number", phoneNumber: "+5511999990000",
+  }), "Jarvis, ligue para a loja"), null);
+});
