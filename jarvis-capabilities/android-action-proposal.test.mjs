@@ -83,4 +83,15 @@ test("rejects package names and URLs invented by the model", async () => {
   assert.equal(await proposeAndroidAction(providerFor({
     type: "dial_number", phoneNumber: "+5511999990000",
   }), "Jarvis, ligue para a loja"), null);
+
+  assert.equal(await proposeAndroidAction(providerFor({
+    type: "dial_number", phoneNumber: "11999990000",
+  }), "Jarvis, ligue para +55 11 99999-0000"), null);
+  assert.deepEqual(await proposeAndroidAction(providerFor({
+    type: "dial_number", phoneNumber: "+55 11 99999-0000",
+  }), "Jarvis, ligue para +55 11 99999-0000"), {
+    type: "dial_number",
+    phoneNumber: "+55 11 99999-0000",
+    requiresUserConfirmation: true,
+  });
 });
