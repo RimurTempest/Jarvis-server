@@ -83,6 +83,12 @@ test("rejects likely credentials in generated file content", () => {
   }));
   assert.equal(result.ok, false);
   assert.match(result.errors.join(" "), /segredo detectado/i);
+
+  const password = validateSelfImprovementProposal(proposal({
+    files: [{ path: "jarvis-capabilities/email.mjs", content: 'const mailPassword = "real-mail-password-value-123";' }],
+  }));
+  assert.equal(password.ok, false);
+  assert.match(password.errors.join(" "), /segredo detectado/i);
 });
 
 test("rejects duplicate file paths", () => {
