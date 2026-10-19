@@ -88,7 +88,7 @@ test("claims pending actions in a transaction and returns a lease token", async 
       id: "action-01",
       capability_id: "capability-01",
       action: { type: "copy_text", text: "hello" },
-      requires_user_confirmation: false,
+      requires_user_confirmation: true,
       expires_at: new Date(Date.now() + 120_000),
       delivery_attempts: 0,
     },
