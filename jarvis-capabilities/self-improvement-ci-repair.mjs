@@ -45,6 +45,7 @@ export async function runSelfImprovementCiRepairLoop({
   validateDraft,
   onValidation = async () => {},
   onRepair = async () => {},
+  diagnoseFailure = async (validation) => cleanDiagnostics(validation),
   maxRepairAttempts = 2,
   maxValidationPolls = 60,
   pollIntervalMs = 10000,
@@ -56,7 +57,7 @@ export async function runSelfImprovementCiRepairLoop({
     throw new TypeError("capability inválida para recuperação CI.");
   }
   if (typeof prepareDraft !== "function" || typeof validateDraft !== "function" ||
-      typeof onValidation !== "function" || typeof onRepair !== "function" || typeof sleep !== "function") {
+      typeof onValidation !== "function" || typeof onRepair !== "function" || typeof diagnoseFailure !== "function" || typeof sleep !== "function") {
     throw new TypeError("Callbacks inválidos no controlador de recuperação CI.");
   }
   if (!Number.isInteger(maxRepairAttempts) || maxRepairAttempts < 0 || maxRepairAttempts > 3) {
@@ -106,7 +107,10 @@ export async function runSelfImprovementCiRepairLoop({
         "ci_validation_timeout",
       );
     }
-    const diagnostics = cleanDiagnostics(validation);
+    const diagnosed = await diagnoseFailure(validation);
+    const diagnostics = typeof diagnosed === "string" && diagnosed.trim()
+      ? diagnosed.trim().slice(0, MAX_DIAGNOSTIC_CHARS)
+      : cleanDiagnostics(validation);
     if (attempt >= maxRepairAttempts) {
       throw makeError(
         `Os testes continuaram falhando após ${attempt} tentativa(s) de correção. A última proposta permanece em draft e não foi ativada.`,
@@ -125,6 +129,7 @@ export async function runSelfImprovementCiRepairLoop({
       draft: latestDraft,
       validation,
       validationFeedback,
+      diagnostics,
     });
   }
 
