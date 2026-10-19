@@ -50,6 +50,7 @@ export async function initializeSelfImprovementRunQueue(pool) {
     repository TEXT NOT NULL,
     base_branch TEXT NOT NULL,
     base_revision TEXT,
+    head_revision TEXT,
     proposal_digest TEXT,
     pull_request_number INTEGER,
     pull_request_url TEXT,
@@ -59,6 +60,7 @@ export async function initializeSelfImprovementRunQueue(pool) {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
+  await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS head_revision TEXT");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_self_improvement_runs_capability_created ON jarvis_self_improvement_runs (capability_id, created_at DESC)");
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_self_improvement_one_active_per_capability
     ON jarvis_self_improvement_runs (capability_id)
@@ -139,6 +141,10 @@ export async function updateSelfImprovementRun(pool, id, nextState, metadata = {
   if (baseRevision !== null && (typeof baseRevision !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(baseRevision))) {
     throw new TypeError("baseRevision inválida.");
   }
+  const headRevision = metadata.headRevision ?? null;
+  if (headRevision !== null && (typeof headRevision !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(headRevision))) {
+    throw new TypeError("headRevision inválida.");
+  }
   const proposalDigest = metadata.proposalDigest ?? null;
   if (proposalDigest !== null && (typeof proposalDigest !== "string" || !/^[a-f0-9]{64}$/i.test(proposalDigest))) {
     throw new TypeError("proposalDigest inválido.");
@@ -159,7 +165,7 @@ export async function updateSelfImprovementRun(pool, id, nextState, metadata = {
   const errorCode = metadata.errorCode === undefined ? null : nonEmpty(metadata.errorCode, "errorCode", 80);
 
   if (nextState === "draft_pr_created") {
-    if (!Number.isSafeInteger(pullRequestNumber) || !pullRequestUrl || !proposalDigest || !baseRevision) {
+    if (!Number.isSafeInteger(pullRequestNumber) || !pullRequestUrl || !proposalDigest || !baseRevision || !headRevision) {
       throw new Error("Uma execução concluída exige PR, URL, digest e revisão base.");
     }
   }
@@ -168,18 +174,20 @@ export async function updateSelfImprovementRun(pool, id, nextState, metadata = {
   const result = await pool.query(`UPDATE jarvis_self_improvement_runs
     SET state = $2,
         base_revision = COALESCE($3, base_revision),
-        proposal_digest = COALESCE($4, proposal_digest),
-        pull_request_number = COALESCE($5, pull_request_number),
-        pull_request_url = COALESCE($6, pull_request_url),
-        proposal_summary = COALESCE($7, proposal_summary),
-        error_code = COALESCE($8, error_code),
-        claimed_at = CASE WHEN $2 = ANY($9::text[]) THEN NOW() ELSE NULL END,
+        head_revision = COALESCE($4, head_revision),
+        proposal_digest = COALESCE($5, proposal_digest),
+        pull_request_number = COALESCE($6, pull_request_number),
+        pull_request_url = COALESCE($7, pull_request_url),
+        proposal_summary = COALESCE($8, proposal_summary),
+        error_code = COALESCE($9, error_code),
+        claimed_at = CASE WHEN $2 = ANY($10::text[]) THEN NOW() ELSE NULL END,
         updated_at = NOW()
-    WHERE id = $1 AND state = $10
+    WHERE id = $1 AND state = $11
     RETURNING *`, [
       id,
       nextState,
       baseRevision,
+      headRevision,
       proposalDigest,
       pullRequestNumber,
       pullRequestUrl,
