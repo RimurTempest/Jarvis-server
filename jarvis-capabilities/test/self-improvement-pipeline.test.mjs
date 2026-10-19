@@ -73,6 +73,13 @@ test("tries the alternate AI provider when the primary generator fails", async (
   assert.deepEqual(stages, ["researching", "collecting_context", "generating", "publishing", "draft_pr_created"]);
 });
 
+test("passes bounded CI feedback to the code generator for a repair attempt", async () => {
+  const { options, calls } = setup({ validationFeedback: "JARVIS Capability Tests failed on a specific assertion." });
+  await prepareSelfImprovementDraft(options);
+  const generation = calls.find((call) => call.stage === "generate");
+  assert.equal(generation.args.validationFeedback, "JARVIS Capability Tests failed on a specific assertion.");
+});
+
 test("stops when web research has no usable HTTPS sources", async () => {
   const { options, stages, calls } = setup({
     searchResearch: async () => ({ available: true, results: [{ title: "HTTP only", url: "http://example.com", text: "not trusted" }] }),
