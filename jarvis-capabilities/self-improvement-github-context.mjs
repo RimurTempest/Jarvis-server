@@ -1,3 +1,4 @@
+import { containsLikelySecret } from "./secret-scanner.mjs";
 const API_ROOT = "https://api.github.com";
 const API_VERSION = "2022-11-28";
 const MAX_FILES = 20;
@@ -137,6 +138,9 @@ export async function fetchSelfImprovementRepositoryContext({
     const content = Buffer.from(contentResponse.content.replace(/\s+/g, ""), "base64").toString("utf8");
     if (!content.trim() || content.length > MAX_FILE_SIZE) {
       throw new Error(`Conteúdo inválido ou grande demais: ${entry.path}.`);
+    }
+    if (containsLikelySecret(content)) {
+      throw new Error(`Possível segredo detectado no arquivo de contexto ${entry.path}; contexto recusado.`);
     }
     contextFiles.push({ path: entry.path, content });
   }
