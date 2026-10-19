@@ -80,8 +80,8 @@ jobs:
           node --test jarvis-capabilities/test/action-delivery.test.mjs
           node --test jarvis-capabilities/test/postgres-action-queue.test.mjs
           node --test jarvis-capabilities/test/android-action-routes.test.mjs
+          node --test jarvis-capabilities/android-action-proposal.test.mjs
       - name: Run PostgreSQL-backed integration tests
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/jarvis_test
         run: node --test jarvis-capabilities/test/postgres-action-queue.integration.test.mjs
-          node --test jarvis-capabilities/android-action-proposal.test.mjs
