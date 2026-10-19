@@ -1,3 +1,5 @@
+import { inflateRawSync } from "node:zlib";
+
 const API_ROOT = "https://api.github.com";
 const API_VERSION = "2022-11-28";
 export const REQUIRED_SELF_IMPROVEMENT_WORKFLOWS = Object.freeze([
@@ -146,4 +148,117 @@ export async function inspectDraftPullRequestValidation({
     },
     checks,
   };
+}
+
+function extractZipText(buffer, maxTotalChars = 12000) {
+  if (!Buffer.isBuffer(buffer) || buffer.length > 12 * 1024 * 1024) return "";
+  let eocd = -1;
+  const lowerBound = Math.max(0, buffer.length - 65557);
+  for (let i = buffer.length - 22; i >= lowerBound; i -= 1) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return "";
+  const entries = buffer.readUInt16LE(eocd + 10);
+  let offset = buffer.readUInt32LE(eocd + 16);
+  const output = [];
+  let total = 0;
+  for (let index = 0; index < Math.min(entries, 100) && offset + 46 <= buffer.length; index += 1) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) break;
+    const method = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const uncompressedSize = buffer.readUInt32LE(offset + 24);
+    const nameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localOffset = buffer.readUInt32LE(offset + 42);
+    const name = buffer.toString("utf8", offset + 46, offset + 46 + nameLength);
+    offset += 46 + nameLength + extraLength + commentLength;
+    if (!/\.(?:txt|log)$/i.test(name) || uncompressedSize > 1_000_000 ||
+        localOffset + 30 > buffer.length || total >= maxTotalChars) continue;
+    if (buffer.readUInt32LE(localOffset) !== 0x04034b50) continue;
+    const localNameLength = buffer.readUInt16LE(localOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const dataEnd = dataStart + compressedSize;
+    if (dataEnd > buffer.length) continue;
+    try {
+      const packed = buffer.subarray(dataStart, dataEnd);
+      const raw = method === 0 ? packed : method === 8 ? inflateRawSync(packed, { maxOutputLength: 1_000_000 }) : null;
+      if (!raw) continue;
+      let text = raw.toString("utf8").replace(/\u001b\[[0-9;]*m/g, "");
+      text = text.replace(/gh[pousr]_[A-Za-z0-9_]{20,}/g, "[GITHUB_TOKEN_REDACTED]")
+        .replace(/Bearer\s+[A-Za-z0-9._~+/-]{12,}/gi, "Bearer [REDACTED]")
+        .replace(/sk-[A-Za-z0-9_-]{16,}/g, "[API_KEY_REDACTED]")
+        .replace(/(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]");
+      text = text.replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g, "");
+      const piece = `--- ${name.slice(0, 160)} ---\n${text}`;
+      const clipped = piece.slice(0, maxTotalChars - total);
+      output.push(clipped);
+      total += clipped.length;
+    } catch {
+      // Malformed or unsupported log entries are skipped, never executed.
+    }
+  }
+  return output.join("\n").slice(0, maxTotalChars);
+}
+
+/**
+ * Fetches a small, redacted text excerpt from failed GitHub Actions jobs.
+ * ZIP entries are read in memory only; log contents are untrusted diagnostic
+ * data and are never executed.
+ */
+export async function fetchSelfImprovementCiFailureDiagnostics({
+  token,
+  repository,
+  validation,
+  fetchImpl = fetch,
+}) {
+  if (typeof token !== "string" || token.trim().length < 20) throw new TypeError("Token do GitHub ausente ou inválido.");
+  if (!validRepository(repository)) throw new TypeError("repository deve usar o formato owner/repository.");
+  if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl deve ser uma função.");
+  const failedRuns = [...(validation?.checks ?? []), ...(validation?.extraChecks ?? [])]
+    .filter((check) => Number.isSafeInteger(check?.runId) && check.status === "completed" &&
+      typeof check.conclusion === "string" && !["success", "skipped"].includes(check.conclusion))
+    .slice(0, 5);
+  const parts = [];
+  for (const run of failedRuns) {
+    parts.push(`Workflow ${String(run.name).slice(0, 120)}: ${String(run.conclusion).slice(0, 40)}; ${String(run.runUrl ?? "").slice(0, 300)}`);
+    try {
+      const jobsResponse = await fetchImpl(`${API_ROOT}/repos/${repository}/actions/runs/${run.runId}/jobs?per_page=100`, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+          "X-GitHub-Api-Version": API_VERSION,
+        },
+      });
+      if (!jobsResponse.ok) continue;
+      const jobsPayload = await jobsResponse.json();
+      const failedJobs = (jobsPayload?.jobs ?? []).filter((job) => job?.conclusion === "failure").slice(0, 3);
+      for (const job of failedJobs) {
+        const failedSteps = (job.steps ?? []).filter((step) => step?.conclusion === "failure")
+          .map((step) => String(step.name ?? "unknown").slice(0, 120)).slice(0, 5);
+        parts.push(`Failed job: ${String(job.name ?? "unknown").slice(0, 160)}; failed steps: ${failedSteps.join(", ") || "not reported"}`);
+        if (!Number.isSafeInteger(job.id)) continue;
+        try {
+          const logResponse = await fetchImpl(`${API_ROOT}/repos/${repository}/actions/jobs/${job.id}/logs`, {
+            headers: {
+              Accept: "application/vnd.github+json",
+              Authorization: `Bearer ${token}`,
+              "X-GitHub-Api-Version": API_VERSION,
+            },
+          });
+          if (!logResponse.ok || typeof logResponse.arrayBuffer !== "function") continue;
+          const bytes = Buffer.from(await logResponse.arrayBuffer());
+          const excerpt = extractZipText(bytes, 5000);
+          if (excerpt) parts.push(`Untrusted CI log excerpt:\n${excerpt}`);
+        } catch {
+          // CI job names and step conclusions remain useful when log retrieval is unavailable.
+        }
+      }
+    } catch {
+      // Diagnostics remain bounded and the caller can still use workflow-level status.
+    }
+  }
+  return (parts.join("\n\n") || "O GitHub Actions confirmou uma falha, mas não disponibilizou logs utilizáveis.")
+    .slice(0, 6000);
 }
