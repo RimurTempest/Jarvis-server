@@ -136,7 +136,7 @@ function shouldSearchWeb(message) {
   const explicitResearch = /\b(pesquise|pesquisar|pesquisa profunda|investigue|investigacao|busque na internet|procure na internet|consulte fontes|verifique|confirme os dados|compare as fontes|traga fontes|com fontes|fontes confiaveis|evidencias|evidencias atuais)\b/.test(text);
   if (explicitResearch) return true;
 
-  const volatileOrDataDriven = /\b(hoje|agora|atualmente|atualizado|atualizada|mais recente|ultimas noticias|ultima noticia|noticias|noticia|preco atual|quanto custa|valor atual|cotacao|estatistica|estatisticas|dados oficiais|dados atuais|pesquisa cientifica|estudo recente|lei vigente|legislacao atual|decreto|artigo da lei|jurisprudencia|eleicao|eleicoes|resultado eleitoral|pesquisa eleitoral|presidente atual|ministro atual|governo atual|2026|2027|2028|2029|2030)\b/.test(text);
+  const volatileOrDataDriven = /\b(hoje|hj|agora|atualmente|atualizado|atualizada|mais recente|ultimas noticias|ultima noticia|noticias|noticia|preco atual|quanto custa|valor atual|cotacao|estatistica|estatisticas|dados oficiais|dados atuais|pesquisa cientifica|estudo recente|lei vigente|legislacao atual|decreto|artigo da lei|jurisprudencia|eleicao|eleicoes|resultado eleitoral|pesquisa eleitoral|presidente atual|ministro atual|governo atual|2026|2027|2028|2029|2030)\b/.test(text);
   if (volatileOrDataDriven) return true;
 
   const evidenceRequest = /\b(qual a fonte|isso e verdade|isso procede|e verdade que|foi confirmado|foi aprovado|foi anunciado|foi publicado|quando foi publicado|numero de casos|quantas pessoas|qual a porcentagem|qual o percentual|dados do ibge|dados do governo|segundo dados)\b/.test(text);
