@@ -156,6 +156,14 @@ test("enables auto-merge only when every runtime safety gate matches", () => {
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, runtimeHealthUrl: "http://jarvis.example/health" }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, runtimeHealthUrl: "https://different-service.onrender.com/health" }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, runtimeHealthUrl: "https://jarvis-server-odpk.onrender.com/not-health" }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({
+    ...valid,
+    env: { ...env, RENDER_EXTERNAL_URL: "https://another-service.onrender.com" },
+  }), false);
+  assert.equal(isSelfImprovementAutoMergeConfigured({
+    ...valid,
+    env: { ...env, RENDER_EXTERNAL_URL: "not-a-url" },
+  }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, env: { ...env, JARVIS_SELF_IMPROVEMENT_AUTO_MERGE: "false" } }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, env: { ...env, JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN: "short" } }), false);
   assert.equal(isSelfImprovementAutoMergeConfigured({ ...valid, env: { ...env, RENDER_GIT_BRANCH: "feature/test" } }), false);
