@@ -1351,6 +1351,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
 
   let capabilityContext = "";
   let activeCapability = null;
+  let queuedSelfImprovementRun = null;
   if (capabilityLearningRequest) {
     try {
       const candidates = await pool.query(
@@ -1448,14 +1449,14 @@ app.post("/api/chat", requireAuth, async (req, res) => {
         capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO BLOQUEADO: ${target.reason} Não afirme que o código foi implementado nem que haverá uma atualização pronta.`;
       } else {
         try {
-          const queuedRun = await enqueueSelfImprovementRun(pool, {
+          queuedSelfImprovementRun = await enqueueSelfImprovementRun(pool, {
             id: randomUUID(),
             capabilityId: activeCapability.id,
             repository: target.repository,
             baseBranch: target.baseBranch,
             target: target.target,
           });
-          capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: a solicitação foi colocada na fila com o ID ${queuedRun.id}, alvo ${target.target}. O processo pesquisará, criará uma proposta em branch isolada e abrirá um pull request draft. Não afirme que o código foi implementado, testado, instalado ou implantado antes de evidência independente.`;
+          capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: a solicitação foi colocada na fila com o ID ${queuedSelfImprovementRun.id}, alvo ${target.target}. O processo pesquisará, criará uma proposta em branch isolada e abrirá um pull request draft. Não afirme que o código foi implementado, testado, instalado ou implantado antes de evidência independente.`;
         } catch (error) {
           if (error?.code === "SELF_IMPROVEMENT_ALREADY_ACTIVE") {
             capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade. Não crie outra nem afirme que terminou.";
@@ -1557,6 +1558,14 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("X-Content-Type-Options", "nosniff");
+  if (queuedSelfImprovementRun) {
+    sendEvent(res, "self_improvement_started", {
+      runId: queuedSelfImprovementRun.id,
+      capabilityId: activeCapability?.id ?? null,
+      goal: activeCapability?.goal ?? message,
+      target: resolveSelfImprovementTarget(activeCapability?.goal ?? message).target,
+    });
+  }
 
   let clientDisconnected = false;
   let responseText = "";
