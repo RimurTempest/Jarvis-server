@@ -8,11 +8,11 @@ function cleanText(value, limit = MAX_MESSAGE_CHARS) {
 
 function cleanContext(value, limit = MAX_MESSAGE_CHARS) {
   return cleanText(value, limit)
-    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----/gi, "[chave privada removida]")
-    .replace(/(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|senha|secret)\\s*[:=]\\s*[^\\s,;]+/gi, "$1=[redigido]")
-    .replace(/\\bbearer\\s+[a-z0-9._-]{12,}/gi, "Bearer [redigido]")
-    .replace(/\\b(?:\\d[ -]*?){13,19}\\b/g, "[número sensível removido]")
-    .replace(/\\b[\\w.+-]+@[\\w.-]+\\.[a-z]{2,}\\b/gi, "[e-mail removido]");
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/gi, "[chave privada removida]")
+    .replace(/(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|senha|secret)\s*[:=]\s*[^\s,;]+/gi, "$1=[redigido]")
+    .replace(/\bbearer\s+[a-z0-9._-]{12,}/gi, "Bearer [redigido]")
+    .replace(/\b(?:\d[ -]*?){13,19}\b/g, "[número sensível removido]")
+    .replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/gi, "[e-mail removido]");
 }
 
 function normalizeIntent(value) {
