@@ -1,7 +1,7 @@
 const DEFAULT_BASE_BRANCH = "main";
-const ANDROID_TARGET_PATTERN = /(?:\bandroid\b|\bapk\b|\bcelular(?:es)?\b|\btelefone(?:s)?\b|\bchamad(?:a|as|o|os)\b|\bliga(?:c(?:ao|oes)|ç(?:ão|ões)|r)\b|\bdiscador\b|\be-?mails?\b|\bemail\b|\baplicativos?\b|\bapps?\b|\bnotifica(?:ção|ções|c[aã]o|c[aã]oes)\b|\bpermiss(?:ão|ões|ao|oes)\b|\btelas?\b|\bwidgets?\b|\bbolha flutuante\b|\binstalar no telefone\b)/i;
-
-function validRepository(value) {
+const ANDROID_TARGET_PATTERN = /(?:\bandroid\b|\bapk\b|\bcelular(?:es)?\b|\btelefone(?:s)?\b|\bchamad(?:a|as|o|os)\b|\bliga(?:c(?:ao|oes)|ç(?:ão|ões)|r)\b|\bdiscador\b|\baplicativos?\b|\bapps?\b|\bnotifica(?:ção|ções|c[aã]o|c[aã]oes)\b|\bpermiss(?:ão|ões|ao|oes)\b|\btelas?\b|\bwidgets?\b|\bbolha flutuante\b|\binstalar no telefone\b|\bwhatsapp\b|\bcontatos?\b|\bc[aâ]mera\b|\bfotos?\b|\bsms\b)/i;
+const EMAIL_ACTION_PATTERN = /\b(?:e-?mails?|email|enviar|mandar|escrever|compartilhar)\b/i;
+const SERVER_TARGET_PATTERN = /\b(?:server|backend|back-end|servidor|api|endpoint|webhook|banco de dados|database|infraestrutura|rota de servidor)\b/i;function validRepository(value) {
   return typeof value === "string" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value);
 }
 
@@ -19,17 +19,26 @@ export function classifySelfImprovementTarget(goal) {
   if (typeof goal !== "string" || !goal.trim() || goal.length > 4000) {
     throw new TypeError("goal inválido.");
   }
-  return ANDROID_TARGET_PATTERN.test(goal) ? "android" : "server";
+  const android = ANDROID_TARGET_PATTERN.test(goal);
+  const server = SERVER_TARGET_PATTERN.test(goal);
+  if (android && server) return "full_stack";
+  if (android) return "android";
+  if (server) return "server";
+  return EMAIL_ACTION_PATTERN.test(goal) ? "android" : "server";
 }
 
 export function resolveSelfImprovementTarget(goal, env = process.env) {
   const target = classifySelfImprovementTarget(goal);
   const repository = target === "android"
     ? env.JARVIS_ANDROID_REPOSITORY
-    : env.JARVIS_GITHUB_REPOSITORY;
+    : target === "full_stack"
+      ? env.JARVIS_FULL_STACK_REPOSITORY
+      : env.JARVIS_GITHUB_REPOSITORY;
   const baseBranch = target === "android"
     ? (env.JARVIS_ANDROID_BASE_BRANCH || DEFAULT_BASE_BRANCH)
-    : (env.JARVIS_GITHUB_BASE_BRANCH || DEFAULT_BASE_BRANCH);
+    : target === "full_stack"
+      ? (env.JARVIS_FULL_STACK_BASE_BRANCH || DEFAULT_BASE_BRANCH)
+      : (env.JARVIS_GITHUB_BASE_BRANCH || DEFAULT_BASE_BRANCH);
   if (!validRepository(repository)) {
     return {
       available: false,
@@ -38,7 +47,9 @@ export function resolveSelfImprovementTarget(goal, env = process.env) {
       baseBranch: null,
       reason: target === "android"
         ? "JARVIS_ANDROID_REPOSITORY não está configurado; nenhuma proposta foi criada."
-        : "JARVIS_GITHUB_REPOSITORY não está configurado; nenhuma proposta foi criada.",
+        : target === "full_stack"
+          ? "JARVIS_FULL_STACK_REPOSITORY não está configurado; nenhuma proposta foi criada."
+          : "JARVIS_GITHUB_REPOSITORY não está configurado; nenhuma proposta foi criada.",
     };
   }
   if (!validBranch(baseBranch)) {
