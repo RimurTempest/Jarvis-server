@@ -62,7 +62,7 @@ export async function initializeActionQueue(pool) {
   await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN target_device_id SET NOT NULL");
   await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE");
   await pool.query("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE WHERE state IN ('pending', 'delivered')");
-  await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_pending ON jarvis_action_queue (target_device_id, created_at, id) WHERE state = 'pending'");
+  await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_target_pending ON jarvis_action_queue (target_device_id, created_at, id) WHERE state = 'pending'");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_lease ON jarvis_action_queue (lease_expires_at) WHERE state = 'delivered'");
 }
 
