@@ -146,6 +146,8 @@ export async function prepareSelfImprovementDraft({
     baseRevision: context.baseRevision,
     proposalDigest: generated.validation.proposalDigest,
     requiresHumanReview: generated.validation.requiresHumanReview,
+    riskLevel: generated.proposal.riskLevel || "standard",
+    changedPaths: generated.proposal.files.map((file) => file.path),
     pullRequest,
     sourceCount: researchResult.results.filter((source) => {
       try { return new URL(source.url).protocol === "https:"; } catch { return false; }
