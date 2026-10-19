@@ -610,7 +610,8 @@ async function recordLearningEvent(eventType, summary, details = {}, sourceMessa
   );
 }
 
-function detectExplicitLearning(message) {
+function detectExplicitLearning(message, capabilityLearningRequest = false) {
+  if (capabilityLearningRequest) return null;
   const raw = String(message ?? "").trim();
   const normalized = normalizeText(raw);
   if (!raw || raw.length > MAX_AUTO_MEMORY_LENGTH) return null;
@@ -646,8 +647,8 @@ function detectExplicitLearning(message) {
   return null;
 }
 
-async function captureExplicitLearning(message, userMessageId) {
-  const learning = detectExplicitLearning(message);
+async function captureExplicitLearning(message, userMessageId, capabilityLearningRequest = false) {
+  const learning = detectExplicitLearning(message, capabilityLearningRequest);
   if (!learning) return null;
   if (learning.type === "explicit_preference") {
     const memory = await saveMemory(learning.content, learning.category, {
@@ -1301,7 +1302,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   }
 
   try {
-    const capturedLearning = await captureExplicitLearning(message, userMessageId);
+    const capturedLearning = await captureExplicitLearning(message, userMessageId, Boolean(capabilityLearningRequest));
     // Uma correção explícita também orienta a resposta atual, sem precisar reler
     // o evento recém-gravado nem duplicá-lo na consulta de feedback anterior.
     if (capturedLearning?.type === "user_correction") {
