@@ -1,3 +1,4 @@
+import { containsLikelySecret } from "./secret-scanner.mjs";
 import { validateSelfImprovementProposal } from "./self-improvement-proposal-policy.mjs";
 
 const MAX_CONTEXT_FILES = 20;
@@ -33,7 +34,7 @@ function cleanContextFiles(value) {
     if (seen.has(path)) throw new TypeError(`Arquivo de contexto duplicado: ${path}.`);
     seen.add(path);
     const content = nonEmptyText(file.content, `contextFiles[${index}].content`, MAX_CONTEXT_FILE_CHARS);
-    if (/-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/i.test(content) || /(?:\bsk-[A-Za-z0-9_-]{24,}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bAKIA[0-9A-Z]{16}\b)/.test(content)) {
+    if (containsLikelySecret(content)) {
       throw new TypeError(`Possível credencial no contexto do repositório: ${path}.`);
     }
     total += content.length;
