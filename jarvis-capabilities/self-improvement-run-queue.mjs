@@ -62,6 +62,8 @@ export async function initializeSelfImprovementRunQueue(pool) {
     base_revision TEXT,
     head_revision TEXT,
     runtime_revision TEXT,
+    merge_commit_sha TEXT,
+    rollback_revision TEXT,
     proposal_digest TEXT,
     pull_request_number INTEGER,
     pull_request_url TEXT,
@@ -75,6 +77,8 @@ export async function initializeSelfImprovementRunQueue(pool) {
   await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD CONSTRAINT jarvis_self_improvement_runs_state_check CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'merged', 'runtime_verified', 'rolled_back', 'merge_unverified', 'failed'))");
   await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS head_revision TEXT");
   await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS runtime_revision TEXT");
+  await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS merge_commit_sha TEXT");
+  await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS rollback_revision TEXT");
   await pool.query("ALTER TABLE jarvis_self_improvement_runs ADD COLUMN IF NOT EXISTS target TEXT NOT NULL DEFAULT 'server'");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_self_improvement_runs_capability_created ON jarvis_self_improvement_runs (capability_id, created_at DESC)");
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_self_improvement_one_active_per_capability
@@ -173,6 +177,14 @@ export async function updateSelfImprovementRun(pool, id, nextState, metadata = {
   if (runtimeRevision !== null && (typeof runtimeRevision !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(runtimeRevision))) {
     throw new TypeError("runtimeRevision inválida.");
   }
+  const mergeCommitSha = metadata.mergeCommitSha ?? null;
+  if (mergeCommitSha !== null && (typeof mergeCommitSha !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(mergeCommitSha))) {
+    throw new TypeError("mergeCommitSha inválida.");
+  }
+  const rollbackRevision = metadata.rollbackRevision ?? null;
+  if (rollbackRevision !== null && (typeof rollbackRevision !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(rollbackRevision))) {
+    throw new TypeError("rollbackRevision inválida.");
+  }
   const proposalDigest = metadata.proposalDigest ?? null;
   if (proposalDigest !== null && (typeof proposalDigest !== "string" || !/^[a-f0-9]{64}$/i.test(proposalDigest))) {
     throw new TypeError("proposalDigest inválido.");
@@ -204,20 +216,24 @@ export async function updateSelfImprovementRun(pool, id, nextState, metadata = {
         base_revision = COALESCE($3, base_revision),
         head_revision = COALESCE($4, head_revision),
         runtime_revision = COALESCE($5, runtime_revision),
-        proposal_digest = COALESCE($6, proposal_digest),
-        pull_request_number = COALESCE($7, pull_request_number),
-        pull_request_url = COALESCE($8, pull_request_url),
-        proposal_summary = COALESCE($9, proposal_summary),
-        error_code = COALESCE($10, error_code),
-        claimed_at = CASE WHEN $2 = ANY($11::text[]) THEN NOW() ELSE NULL END,
+        merge_commit_sha = COALESCE($6, merge_commit_sha),
+        rollback_revision = COALESCE($7, rollback_revision),
+        proposal_digest = COALESCE($8, proposal_digest),
+        pull_request_number = COALESCE($9, pull_request_number),
+        pull_request_url = COALESCE($10, pull_request_url),
+        proposal_summary = COALESCE($11, proposal_summary),
+        error_code = COALESCE($12, error_code),
+        claimed_at = CASE WHEN $2 = ANY($13::text[]) THEN NOW() ELSE NULL END,
         updated_at = NOW()
-    WHERE id = $1 AND state = $12
+    WHERE id = $1 AND state = $14
     RETURNING *`, [
       id,
       nextState,
       baseRevision,
       headRevision,
       runtimeRevision,
+      mergeCommitSha,
+      rollbackRevision,
       proposalDigest,
       pullRequestNumber,
       pullRequestUrl,
