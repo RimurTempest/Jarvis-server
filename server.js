@@ -15,7 +15,7 @@ import { buildCapabilityPromptContext } from "./jarvis-capabilities/capability-p
 import { prepareSelfImprovementDraft } from "./jarvis-capabilities/self-improvement-pipeline.mjs";
 import { initializeSelfImprovementRunQueue, enqueueSelfImprovementRun, updateSelfImprovementRun, listSelfImprovementRuns } from "./jarvis-capabilities/self-improvement-run-queue.mjs";
 import { startSelfImprovementWorker } from "./jarvis-capabilities/self-improvement-worker.mjs";
-import { inspectDraftPullRequestValidation } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
+import { inspectDraftPullRequestValidation, fetchSelfImprovementCiFailureDiagnostics } from "./jarvis-capabilities/self-improvement-github-validation.mjs";
 import { runSelfImprovementCiRepairLoop } from "./jarvis-capabilities/self-improvement-ci-repair.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 
@@ -352,6 +352,11 @@ async function processSelfImprovementRun(run) {
       pullRequestNumber: draft.pullRequest.number,
       expectedHeadSha: draft.pullRequest.commitSha,
       ...(requiredWorkflows ? { requiredWorkflows } : {}),
+    }),
+    diagnoseFailure: async (validation) => fetchSelfImprovementCiFailureDiagnostics({
+      token: githubToken,
+      repository: run.repository,
+      validation,
     }),
     onValidation: async ({ draft, validation }) => {
       const pr = draft.pullRequest;
