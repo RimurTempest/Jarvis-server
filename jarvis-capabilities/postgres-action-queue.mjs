@@ -56,8 +56,9 @@ export async function initializeActionQueue(pool) {
 }
 
 /**
- * Internal server-side enqueue only. Do not expose this directly to an unauthenticated
- * or general chat endpoint; caller must establish the user-approved action and capability.
+ * Internal server-side enqueue only. Callers must authenticate the chat request,
+ * validate the structured action, bind it to one active device, and require
+ * explicit confirmation on that Android device before execution.
  */
 export async function enqueueAndroidAction(pool, { id, capabilityId, action, expiresAt, targetDeviceId }) {
   if (!pool || typeof pool.query !== "function") throw new TypeError("pool PostgreSQL inválido.");
