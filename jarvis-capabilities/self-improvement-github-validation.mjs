@@ -79,6 +79,10 @@ export async function inspectDraftPullRequestValidation({
     reasons.push("Nenhuma execução de GitHub Actions foi encontrada para a revisão.");
   }
 
+  if (Number.isInteger(actions?.total_count) && actions.total_count > (actions.workflow_runs || []).length) {
+    reasons.push("A lista de execuções do GitHub está incompleta; validação recusada.");
+  }
+
   const relevantRuns = (actions?.workflow_runs || []).filter((run) =>
     run?.head_sha?.toLowerCase() === expectedHeadSha.toLowerCase() &&
     run?.event === "pull_request" &&
@@ -107,6 +111,16 @@ export async function inspectDraftPullRequestValidation({
       headSha: latest.head_sha,
     };
   });
+
+  const requiredNames = new Set(requiredWorkflows);
+  const extraNames = [...new Set(relevantRuns.map((run) => run.name).filter((name) => typeof name === "string" && !requiredNames.has(name)))];
+  for (const name of extraNames) {
+    const latest = relevantRuns.filter((run) => run.name === name)
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
+    if (!latest || latest.status !== "completed" || !["success", "skipped"].includes(latest.conclusion)) {
+      reasons.push(`O workflow adicional "${name}" não terminou com sucesso.`);
+    }
+  }
 
   return {
     ready: reasons.length === 0 && checks.length === requiredWorkflows.length,
