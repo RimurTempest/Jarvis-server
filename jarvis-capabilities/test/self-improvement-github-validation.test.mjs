@@ -9,7 +9,7 @@ function response(status, payload) {
   return { ok: status >= 200 && status < 300, status, async json() { return payload; } };
 }
 
-function fakeFetch({ headSha = sha, missing = [], failure = null, pending = null, draft = true } = {}) {
+function fakeFetch({ headSha = sha, missing = [], failure = null, pending = null, draft = true, extraRun = null } = {}) {
   const calls = [];
   const pullRequest = { number: 42, state: "open", draft, html_url: "https://github.com/example/repo/pull/42", head: { sha: headSha } };
   const runs = workflows.filter((name) => !missing.includes(name)).map((name, index) => ({
@@ -23,6 +23,7 @@ function fakeFetch({ headSha = sha, missing = [], failure = null, pending = null
     html_url: `https://github.com/example/repo/actions/runs/${index + 1}`,
     pull_requests: [{ number: 42 }],
   }));
+  if (extraRun) runs.push({ ...extraRun, head_sha: sha, event: "pull_request", pull_requests: [{ number: 42 }] });
   const fetchImpl = async (url, options = {}) => {
     calls.push({ url, options });
     if (url.endsWith("/pulls/42")) return response(200, pullRequest);
@@ -86,4 +87,20 @@ test("validates input before network access", async () => {
   await assert.rejects(inspectDraftPullRequestValidation(input({ token: "short", fetchImpl })), /Token do GitHub/i);
   await assert.rejects(inspectDraftPullRequestValidation(input({ expectedHeadSha: "main", fetchImpl })), /SHA completo/i);
   assert.equal(calls.length, 0);
+});
+
+test("fails closed when an additional workflow failed on the same PR revision", async () => {
+  const { fetchImpl } = fakeFetch({
+    extraRun: {
+      id: 99,
+      name: "Extra Security Scan",
+      status: "completed",
+      conclusion: "failure",
+      created_at: new Date(2026, 0, 10).toISOString(),
+      html_url: "https://github.com/example/repo/actions/runs/99",
+    },
+  });
+  const result = await inspectDraftPullRequestValidation(input({ fetchImpl }));
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /workflow adicional/i);
 });
