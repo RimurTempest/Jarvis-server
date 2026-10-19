@@ -557,7 +557,14 @@ async function handleSelfImprovementRunFailure(run, error) {
   try {
     const current = await pool.query("SELECT state FROM jarvis_self_improvement_runs WHERE id = $1", [run.id]);
     const state = current.rows[0]?.state;
-    if (state && !["draft_pr_created", "merged", "failed"].includes(state)) {
+    if (state === "merged") {
+      await updateSelfImprovementRun(pool, run.id, "merge_unverified");
+      await recordLearningEvent(
+        "self_improvement_merge_unverified",
+        "A proposta foi mesclada, mas o processo de verificação foi interrompido; o estado de produção não está confirmado.",
+        { capabilityId: run.capability_id, runId: run.id },
+      ).catch(() => {});
+    } else if (state && !["draft_pr_created", "runtime_verified", "rolled_back", "merge_unverified", "failed"].includes(state)) {
       const safeCodes = new Set([
         "ci_repair_exhausted",
         "ci_validation_timeout",
@@ -1219,13 +1226,19 @@ app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => 
       service: "JARVIS",
       notifications: result.rows.map((row) => ({
         ...row,
-        notificationType: row.state === "merged"
-          ? "proposal_merged"
-          : row.state === "draft_pr_created"
-            ? "proposal_ready_for_review"
-            : row.state === "failed"
-            ? "proposal_failed"
-            : "proposal_progress",
+        notificationType: row.state === "runtime_verified"
+          ? "capability_activated"
+          : row.state === "rolled_back"
+            ? "capability_rollback_completed"
+            : row.state === "merge_unverified"
+              ? "deployment_unverified"
+              : row.state === "merged"
+                ? "proposal_merged"
+                : row.state === "draft_pr_created"
+                  ? "proposal_ready_for_review"
+                  : row.state === "failed"
+                    ? "proposal_failed"
+                    : "proposal_progress",
       })),
     });
   } catch (error) {
