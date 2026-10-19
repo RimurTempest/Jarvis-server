@@ -114,8 +114,8 @@ export async function generateSelfImprovementProposal({
     ],
     response_format: { type: "json_object" },
     temperature: 0.1,
-    max_completion_tokens: 12000,
-  }, { timeout: 45_000, maxRetries: 0 });
+    max_completion_tokens: 20000,
+  }, { timeout: 120_000, maxRetries: 0 });
 
   const raw = completion?.choices?.[0]?.message?.content;
   if (typeof raw !== "string" || !raw.trim()) throw new Error("O provedor de IA não retornou uma proposta de código.");
