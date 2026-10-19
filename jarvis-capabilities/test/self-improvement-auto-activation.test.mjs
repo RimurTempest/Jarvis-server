@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activateValidatedSelfImprovementDraft } from "../self-improvement-auto-activation.mjs";
+import { mergeValidatedSelfImprovementDraft } from "../self-improvement-auto-activation.mjs";
 
 const base = {
   enabled: true,
@@ -29,36 +29,36 @@ function mockFetch(responses) {
 }
 
 test("does not activate when disabled, CI failed, or human review is required", async () => {
-  assert.deepEqual(await activateValidatedSelfImprovementDraft({ ...base, enabled: false }), {
-    activated: false, reason: "auto_activation_disabled",
+  assert.deepEqual(await mergeValidatedSelfImprovementDraft({ ...base, enabled: false }), {
+    merged: false, reason: "auto_activation_disabled",
   });
-  assert.deepEqual(await activateValidatedSelfImprovementDraft({ ...base, validation: { ready: false } }), {
-    activated: false, reason: "ci_not_passed",
+  assert.deepEqual(await mergeValidatedSelfImprovementDraft({ ...base, validation: { ready: false } }), {
+    merged: false, reason: "ci_not_passed",
   });
-  assert.deepEqual(await activateValidatedSelfImprovementDraft({ ...base, requiresHumanReview: true }), {
-    activated: false, reason: "human_review_required",
+  assert.deepEqual(await mergeValidatedSelfImprovementDraft({ ...base, requiresHumanReview: true }), {
+    merged: false, reason: "human_review_required",
   });
 });
 
 test("keeps protected paths draft-only", async () => {
-  const result = await activateValidatedSelfImprovementDraft({
+  const result = await mergeValidatedSelfImprovementDraft({
     ...base,
     changedPaths: ["server.js"],
   });
-  assert.deepEqual(result, { activated: false, reason: "protected_paths" });
-  const policyPath = await activateValidatedSelfImprovementDraft({
+  assert.deepEqual(result, { merged: false, reason: "protected_paths" });
+  const policyPath = await mergeValidatedSelfImprovementDraft({
     ...base,
     changedPaths: ["jarvis-capabilities/self-improvement-pipeline.mjs"],
   });
-  assert.deepEqual(policyPath, { activated: false, reason: "protected_paths" });
+  assert.deepEqual(policyPath, { merged: false, reason: "protected_paths" });
 });
 
 test("refuses a stale or non-draft PR before any merge call", async () => {
   const mock = mockFetch([{
     payload: { state: "open", draft: true, base: { ref: "main" }, head: { sha: "b".repeat(40) } },
   }]);
-  const result = await activateValidatedSelfImprovementDraft({ ...base, fetchImpl: mock.fetchImpl });
-  assert.deepEqual(result, { activated: false, reason: "stale_or_non_draft_pr" });
+  const result = await mergeValidatedSelfImprovementDraft({ ...base, fetchImpl: mock.fetchImpl });
+  assert.deepEqual(result, { merged: false, reason: "stale_or_non_draft_pr" });
   assert.equal(mock.calls.length, 1);
 });
 
@@ -68,8 +68,8 @@ test("marks a safe exact-SHA draft ready and merges only after validation", asyn
     { payload: { ok: true } },
     { payload: { merged: true, sha: "c".repeat(40) } },
   ]);
-  const result = await activateValidatedSelfImprovementDraft({ ...base, fetchImpl: mock.fetchImpl });
-  assert.deepEqual(result, { activated: true, mergeCommitSha: "c".repeat(40), pullRequestNumber: 12 });
+  const result = await mergeValidatedSelfImprovementDraft({ ...base, fetchImpl: mock.fetchImpl });
+  assert.deepEqual(result, { merged: true, mergeCommitSha: "c".repeat(40), pullRequestNumber: 12 });
   assert.equal(mock.calls[1].url.endsWith("/ready_for_review"), true);
   assert.equal(mock.calls[2].url.endsWith("/merge"), true);
   assert.equal(mock.calls[2].body.sha, "a".repeat(40));
@@ -83,7 +83,7 @@ test("reverts the PR to draft when the merge attempt fails", async () => {
     { payload: { ok: true } },
   ]);
   await assert.rejects(
-    activateValidatedSelfImprovementDraft({ ...base, fetchImpl: mock.fetchImpl }),
+    mergeValidatedSelfImprovementDraft({ ...base, fetchImpl: mock.fetchImpl }),
     /HTTP 409/,
   );
   assert.equal(mock.calls[3].url.endsWith("/convert_to_draft"), true);
