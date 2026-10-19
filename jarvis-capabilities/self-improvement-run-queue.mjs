@@ -50,7 +50,7 @@ export async function initializeSelfImprovementRunQueue(pool) {
     id UUID PRIMARY KEY,
     capability_id TEXT NOT NULL REFERENCES jarvis_capabilities(id) ON DELETE CASCADE,
     target TEXT NOT NULL DEFAULT 'server',
-    state TEXT NOT NULL CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'merged', 'failed'))
+    state TEXT NOT NULL CHECK (state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'draft_pr_created', 'merged', 'failed')),
     repository TEXT NOT NULL,
     base_branch TEXT NOT NULL,
     base_revision TEXT,
