@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifySelfImprovementTarget, resolveSelfImprovementTarget, requiredWorkflowsForRepository } from "../self-improvement-target.mjs";
+import { classifySelfImprovementTarget, resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "../self-improvement-target.mjs";
 
 test("classifies Android and device capabilities separately from backend work", () => {
   assert.equal(classifySelfImprovementTarget("Adicionar uma função para enviar e-mails pelo celular"), "android");
@@ -57,33 +57,27 @@ test("rejects invalid target configuration", () => {
   assert.throws(() => classifySelfImprovementTarget(""), /goal inválido/);
 });
 
-test("uses Android CI workflow names only for the configured Android repository", () => {
-  const env = {
-    JARVIS_GITHUB_REPOSITORY: "RimurTempest/Jarvis-server",
-    JARVIS_ANDROID_REPOSITORY: "RimurTempest/Jarvis-android",
-  };
-  assert.equal(requiredWorkflowsForRepository("RimurTempest/Jarvis-server", env), null);
-  assert.deepEqual(requiredWorkflowsForRepository("RimurTempest/Jarvis-android", env), ["JARVIS Android Build and Tests"]);
-  assert.deepEqual(requiredWorkflowsForRepository("RimurTempest/Jarvis-android", {
-    ...env,
+test("selects required CI workflows from the persisted target type", () => {
+  assert.equal(requiredWorkflowsForTarget("server", {}), null);
+  assert.deepEqual(requiredWorkflowsForTarget("android", {}), ["JARVIS Android Build and Tests"]);
+  assert.deepEqual(requiredWorkflowsForTarget("android", {
     JARVIS_ANDROID_REQUIRED_WORKFLOWS: "Android Unit Tests, APK Debug Build",
   }), ["Android Unit Tests", "APK Debug Build"]);
-  assert.deepEqual(requiredWorkflowsForRepository("RimurTempest/Jarvis-monorepo", {
-    JARVIS_FULL_STACK_REPOSITORY: "RimurTempest/Jarvis-monorepo",
-  }), ["JARVIS Capability Tests", "JARVIS Android Build and Tests"]);
-  assert.deepEqual(requiredWorkflowsForRepository("RimurTempest/Jarvis-monorepo", {
-    JARVIS_FULL_STACK_REPOSITORY: "RimurTempest/Jarvis-monorepo",
+  assert.deepEqual(requiredWorkflowsForTarget("full_stack", {}), [
+    "JARVIS Capability Tests",
+    "JARVIS Android Build and Tests",
+  ]);
+  assert.deepEqual(requiredWorkflowsForTarget("full_stack", {
     JARVIS_FULL_STACK_REQUIRED_WORKFLOWS: "Backend Tests,Android APK Build,Integration Tests",
   }), ["Backend Tests", "Android APK Build", "Integration Tests"]);
 });
 
-test("rejects malformed Android CI workflow configuration", () => {
-  assert.throws(() => requiredWorkflowsForRepository("RimurTempest/Jarvis-android", {
-    JARVIS_ANDROID_REPOSITORY: "RimurTempest/Jarvis-android",
+test("rejects malformed required CI workflow configuration", () => {
+  assert.throws(() => requiredWorkflowsForTarget("android", {
     JARVIS_ANDROID_REQUIRED_WORKFLOWS: "Android Unit Tests,,APK Build",
   }), /nomes únicos/i);
-  assert.throws(() => requiredWorkflowsForRepository("RimurTempest/Jarvis-monorepo", {
-    JARVIS_FULL_STACK_REPOSITORY: "RimurTempest/Jarvis-monorepo",
+  assert.throws(() => requiredWorkflowsForTarget("full_stack", {
     JARVIS_FULL_STACK_REQUIRED_WORKFLOWS: "Backend Tests,Backend Tests",
   }), /nomes únicos/i);
+  assert.throws(() => requiredWorkflowsForTarget("unknown", {}), /target inválido/i);
 });
