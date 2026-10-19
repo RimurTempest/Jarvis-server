@@ -420,6 +420,12 @@ async function processSelfImprovementRun(run) {
         baseBranch: run.base_branch,
         expectedHeadSha: finalDraft.pullRequest.commitSha,
         validation: result.validation,
+        validateCurrentDraft: () => inspectDraftPullRequestValidation({
+          token: githubToken,
+          repository: run.repository,
+          pullRequestNumber: finalDraft.pullRequest.number,
+          expectedHeadSha: finalDraft.pullRequest.commitSha,
+        }),
         requiresHumanReview: finalDraft.requiresHumanReview,
         changedPaths: finalDraft.changedPaths,
       });
