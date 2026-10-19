@@ -166,7 +166,7 @@ export async function updateSelfImprovementRun(pool, id, nextState, metadata = {
 
   if (nextState === "draft_pr_created") {
     if (!Number.isSafeInteger(pullRequestNumber) || !pullRequestUrl || !proposalDigest || !baseRevision || !headRevision) {
-      throw new Error("Uma execução concluída exige PR, URL, digest e revisão base.");
+      throw new Error("Uma execução concluída exige PR, URL, digest e revisões base/head.");
     }
   }
   if (nextState === "failed" && !errorCode) throw new Error("Execução falha exige um código de erro não sensível.");
