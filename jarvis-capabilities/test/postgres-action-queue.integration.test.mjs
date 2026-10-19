@@ -105,7 +105,7 @@ test("PostgreSQL integration: schema migration, one-time enrollment, device-boun
       token: device.token,
     })).ok, false);
 
-    await legacyPool.query(\`CREATE TABLE jarvis_action_queue (
+    await legacyPool.query(`CREATE TABLE jarvis_action_queue (
       id TEXT PRIMARY KEY,
       capability_id TEXT NOT NULL,
       state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'completed', 'failed', 'expired')),
@@ -120,7 +120,7 @@ test("PostgreSQL integration: schema migration, one-time enrollment, device-boun
       delivery_attempts INTEGER NOT NULL DEFAULT 0,
       completed_at TIMESTAMPTZ,
       result JSONB
-    )\`);
+    )`);
     await legacyPool.query(
       "INSERT INTO jarvis_action_queue (id, capability_id, state, action, expires_at) VALUES ($1, $2, 'pending', $3::jsonb, $4)",
       ["legacy-pending", "android-basic-actions", JSON.stringify({ type: "copy_text", text: "old" }), new Date(Date.now() + 120_000)],
