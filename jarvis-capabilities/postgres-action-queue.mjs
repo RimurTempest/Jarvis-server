@@ -38,7 +38,8 @@ export async function initializeActionQueue(pool) {
     capability_id TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'completed', 'failed', 'expired')),
     action JSONB NOT NULL,
-    requires_user_confirmation BOOLEAN NOT NULL DEFAULT FALSE,
+    target_device_id TEXT NOT NULL,
+    requires_user_confirmation BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
     delivered_at TIMESTAMPTZ,
@@ -49,30 +50,45 @@ export async function initializeActionQueue(pool) {
     completed_at TIMESTAMPTZ,
     result JSONB
   )`);
-  await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_pending ON jarvis_action_queue (created_at, id) WHERE state = 'pending'");
+  await pool.query("ALTER TABLE jarvis_action_queue ADD COLUMN IF NOT EXISTS target_device_id TEXT");
+  // Safely retire legacy rows that predate target-device binding instead of
+  // allowing unaddressed actions to remain stuck or be delivered ambiguously.
+  await pool.query(`UPDATE jarvis_action_queue
+    SET state = 'expired', completed_at = COALESCE(completed_at, NOW()),
+        result = COALESCE(result, '{"ok":false,"message":"Ação legada sem destino de dispositivo."}'::jsonb),
+        lease_token_hash = NULL
+    WHERE target_device_id IS NULL AND state IN ('pending', 'delivered')`);
+  await pool.query("UPDATE jarvis_action_queue SET target_device_id = 'legacy-unassigned' WHERE target_device_id IS NULL");
+  await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN target_device_id SET NOT NULL");
+  await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE");
+  await pool.query("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE WHERE state IN ('pending', 'delivered')");
+  await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_target_pending ON jarvis_action_queue (target_device_id, created_at, id) WHERE state = 'pending'");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_lease ON jarvis_action_queue (lease_expires_at) WHERE state = 'delivered'");
 }
 
 /**
- * Internal server-side enqueue only. Do not expose this directly to an unauthenticated
- * or general chat endpoint; caller must establish the user-approved action and capability.
+ * Internal server-side enqueue only. Callers must authenticate the chat request,
+ * validate the structured action, bind it to one active device, and require
+ * explicit confirmation on that Android device before execution.
  */
-export async function enqueueAndroidAction(pool, { id, capabilityId, action, expiresAt }) {
+export async function enqueueAndroidAction(pool, { id, capabilityId, action, expiresAt, targetDeviceId }) {
   if (!pool || typeof pool.query !== "function") throw new TypeError("pool PostgreSQL inválido.");
+  const cleanTargetDeviceId = cleanDeviceId(targetDeviceId);
   const envelope = createAndroidActionEnvelope({ id, capabilityId, action, expiresAt });
   const expires = new Date(envelope.expiresAt);
   const normalized = validateAndroidAction(envelope.action);
   await pool.query(
     `INSERT INTO jarvis_action_queue
-      (id, capability_id, state, action, requires_user_confirmation, expires_at)
-     VALUES ($1, $2, 'pending', $3::jsonb, $4, $5)`,
-    [envelope.id, envelope.capabilityId, safeJson(normalized), envelope.requiresUserConfirmation, expires]
+      (id, capability_id, state, action, target_device_id, requires_user_confirmation, expires_at)
+     VALUES ($1, $2, 'pending', $3::jsonb, $4, $5, $6)`,
+    [envelope.id, envelope.capabilityId, safeJson(normalized), cleanTargetDeviceId, envelope.requiresUserConfirmation, expires]
   );
   return {
     id: envelope.id,
     capabilityId: envelope.capabilityId,
     state: "pending",
     action: normalized,
+    targetDeviceId: cleanTargetDeviceId,
     requiresUserConfirmation: envelope.requiresUserConfirmation,
     expiresAt: envelope.expiresAt,
   };
@@ -113,10 +129,10 @@ export async function claimNextAndroidAction(pool, { deviceId, now = new Date(),
     const selected = await client.query(
       `SELECT id, capability_id, action, requires_user_confirmation, expires_at, delivery_attempts
        FROM jarvis_action_queue
-       WHERE state = 'pending' AND expires_at > $1
+       WHERE state = 'pending' AND expires_at > $1 AND target_device_id = $2
        ORDER BY created_at ASC, id ASC
        LIMIT 1 FOR UPDATE SKIP LOCKED`,
-      [current]
+      [current, cleanId]
     );
     if (!selected.rowCount) {
       await client.query(

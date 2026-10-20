@@ -56,7 +56,12 @@ test("initializes the queue table and indexes", async () => {
   const pool = fakePool();
   await initializeActionQueue(pool);
   assert.ok(pool.calls.some((call) => call.sql.includes("CREATE TABLE IF NOT EXISTS jarvis_action_queue")));
-  assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_pending")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("UPDATE jarvis_action_queue") && call.sql.includes("target_device_id IS NULL") && call.sql.includes("state = 'expired'")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("target_device_id = 'legacy-unassigned'")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("ALTER TABLE jarvis_action_queue ALTER COLUMN target_device_id SET NOT NULL")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_target_pending")));
   assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_lease")));
 });
 
@@ -66,15 +71,19 @@ test("enqueues only structured allowlisted action data", async () => {
     id: "action-01",
     capabilityId: "capability-01",
     action: { type: "copy_text", text: "hello" },
+    targetDeviceId: "android-primary",
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   });
   assert.equal(result.state, "pending");
   assert.equal(result.action.text, "hello");
+  assert.equal(result.targetDeviceId, "android-primary");
+  assert.equal(result.requiresUserConfirmation, true);
   assert.equal(pool.calls.length, 1);
   await assert.rejects(() => enqueueAndroidAction(pool, {
     id: "action-02",
     capabilityId: "capability-01",
     action: { type: "shell", command: "dangerous" },
+    targetDeviceId: "android-primary",
   }), /não permitido/);
 });
 
@@ -84,7 +93,7 @@ test("claims pending actions in a transaction and returns a lease token", async 
       id: "action-01",
       capability_id: "capability-01",
       action: { type: "copy_text", text: "hello" },
-      requires_user_confirmation: false,
+      requires_user_confirmation: true,
       expires_at: new Date(Date.now() + 120_000),
       delivery_attempts: 0,
     },
@@ -94,6 +103,7 @@ test("claims pending actions in a transaction and returns a lease token", async 
   assert.equal(claimed.delivery.deviceId, "android-primary");
   assert.equal(typeof claimed.delivery.leaseToken, "string");
   assert.ok(pool.calls.some((call) => call.sql === "BEGIN"));
+  assert.ok(pool.calls.some((call) => call.sql.includes("target_device_id = $2") && call.params[1] === "android-primary"));
   assert.ok(pool.calls.some((call) => call.sql.includes("LIMIT 1 FOR UPDATE SKIP LOCKED")));
   assert.ok(pool.calls.some((call) => call.sql === "COMMIT"));
 });
@@ -104,15 +114,21 @@ test("accepts results only with the active device lease and preserves confirmati
       id: "action-01",
       capability_id: "capability-01",
       action: { type: "copy_text", text: "hello" },
-      requires_user_confirmation: false,
+      requires_user_confirmation: true,
       expires_at: new Date(Date.now() + 120_000),
     },
   });
-  const completed = await completeAndroidAction(pool, {
+  await assert.rejects(() => completeAndroidAction(pool, {
     id: "action-01",
     deviceId: "android-primary",
     leaseToken: "known-token",
     result: { ok: true, message: "copied" },
+  }), /confirmação explícita/);
+  const completed = await completeAndroidAction(pool, {
+    id: "action-01",
+    deviceId: "android-primary",
+    leaseToken: "known-token",
+    result: { ok: true, message: "copied", userConfirmed: true },
   });
   assert.equal(completed.state, "completed");
   assert.ok(pool.calls.some((call) => call.sql.includes("lease_token_hash = NULL")));

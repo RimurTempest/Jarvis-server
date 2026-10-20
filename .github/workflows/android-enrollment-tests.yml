@@ -16,8 +16,13 @@ on:
   pull_request:
     paths:
       - "jarvis-capabilities/**"
+      - "server.js"
       - ".github/workflows/android-enrollment-tests.yml"
   workflow_dispatch:
+
+concurrency:
+  group: jarvis-android-enrollment-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   android-enrollment-tests:
@@ -36,6 +41,7 @@ jobs:
           node --check jarvis-capabilities/android-pairing-page.mjs
           node --check jarvis-capabilities/test/android-pairing-page.test.mjs
           node --check server.js
+          node --check jarvis-capabilities/android-action-proposal.mjs
           node --check jarvis-capabilities/test/android-device-registry.test.mjs
           node --check jarvis-capabilities/test/android-action-routes.test.mjs
       - name: Run enrollment and route tests
