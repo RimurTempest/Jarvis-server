@@ -1,6 +1,6 @@
 const API_ROOT = "https://api.github.com";
 const API_VERSION = "2022-11-28";
-const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$/;
+const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+[/][A-Za-z0-9_.-]+$/;
 
 async function readGitHubEndpoint({ token, path, fetchImpl, timeoutMs }) {
   const controller = new AbortController();
