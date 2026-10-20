@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext } from "../provider-failover-policy.mjs";
+import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext, runProvidersSequentially } from "../provider-failover-policy.mjs";
 
 test("uses cooldowns appropriate to authentication, rate limits, and transient failures", () => {
   assert.equal(providerCooldownMs({ status: 401 }), 900000);
@@ -58,4 +58,48 @@ test("merges relevant older messages before recent history and removes exact dup
     { role: "assistant", content: "already recent" },
     { role: "user", content: "latest turn" },
   ]);
+});
+
+test("serializes provider attempts after an empty response", async () => {
+  const events = [];
+  let activeAttempts = 0;
+  let maxActiveAttempts = 0;
+  const providers = [{ name: "A" }, { name: "B" }, { name: "C" }];
+
+  const result = await runProvidersSequentially(providers, async (provider) => {
+    activeAttempts += 1;
+    maxActiveAttempts = Math.max(maxActiveAttempts, activeAttempts);
+    events.push(`start:${provider.name}`);
+    try {
+      // A finishes with an empty response; B cannot start until A has settled.
+      await Promise.resolve();
+      events.push(`end:${provider.name}`);
+      return provider.name === "A" ? "   " : "valid response";
+    } finally {
+      activeAttempts -= 1;
+    }
+  });
+
+  assert.deepEqual(events, ["start:A", "end:A", "start:B", "end:B"]);
+  assert.equal(maxActiveAttempts, 1);
+  assert.deepEqual(result, { provider: { name: "B" }, text: "valid response" });
+});
+
+test("stops sequential fallback immediately when the client disconnects", async () => {
+  const attempted = [];
+  const providers = [{ name: "A" }, { name: "B" }];
+  let disconnected = false;
+  const result = await runProvidersSequentially(
+    providers,
+    async (provider) => {
+      attempted.push(provider.name);
+      disconnected = true;
+      throw new Error("client disconnected");
+    },
+    () => assert.fail("must not record provider failure after disconnect"),
+    () => disconnected
+  );
+
+  assert.deepEqual(attempted, ["A"]);
+  assert.equal(result, null);
 });
