@@ -11,8 +11,8 @@ function isValidBranch(value) {
     value.length <= 100 &&
     !value.startsWith("/") &&
     !value.endsWith("/") &&
-    !value.includes("..") &&
-    !value.includes("\\\\") &&
+    !value.includes("\\") &&
+    !value.includes("\\") &&
     BRANCH_PATTERN.test(value);
 }
 
