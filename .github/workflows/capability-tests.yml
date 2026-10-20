@@ -46,6 +46,7 @@ jobs:
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Check capability module syntax
         run: |
+          node --check server.js
           node --check jarvis-capabilities/capability-prompt-context.mjs
           node --check jarvis-capabilities/universal-task-store.mjs
           node --check jarvis-capabilities/test/universal-task-store.test.mjs
