@@ -63,6 +63,8 @@ jobs:
           node --check jarvis-capabilities/self-improvement-runtime-guard.mjs
           node --check jarvis-capabilities/self-improvement-target.mjs
           node --check jarvis-capabilities/self-improvement-worker.mjs
+          node --check jarvis-capabilities/universal-capability-execution.mjs
+          node --check jarvis-capabilities/universal-task-store.mjs
       - name: Run capability tests
         run: |
           node --test jarvis-capabilities/test/provider-failover-policy.test.mjs
@@ -91,3 +93,5 @@ jobs:
           node --test jarvis-capabilities/test/self-improvement-server.integration.test.mjs
           node --test jarvis-capabilities/test/self-improvement-target.test.mjs
           node --test jarvis-capabilities/test/self-improvement-worker.test.mjs
+          node --test jarvis-capabilities/test/universal-capability-execution.test.mjs
+          node --test jarvis-capabilities/test/universal-task-store.test.mjs
