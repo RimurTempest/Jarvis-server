@@ -21,6 +21,7 @@ import { mergeValidatedSelfImprovementDraft } from "./jarvis-capabilities/self-i
 import { resolveRuntimeHealthUrl, verifyRuntimeRevision, revertMergedCommitSafely, isSelfImprovementAutoMergeConfigured } from "./jarvis-capabilities/self-improvement-runtime-guard.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 import { initializeUniversalTaskStore, createUniversalTaskRecord, transitionUniversalTaskRecord, getUniversalTaskRecord } from "./jarvis-capabilities/universal-task-store.mjs";
+import { getSelfImprovementReadiness } from "./jarvis-capabilities/self-improvement-readiness.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -1189,6 +1190,32 @@ app.get("/health", async (_req, res) => {
     aiProviders: providers.length,
     webSearchConfigured: Boolean(process.env.EXA_API_KEY),
     persistentLearningMemory: learningMemoryReady,
+  });
+});
+
+app.get("/api/self-improvement/status", requireAuth, async (_req, res) => {
+  let databaseAvailable = false;
+  try {
+    if (pool) {
+      await pool.query("SELECT 1");
+      databaseAvailable = true;
+    }
+  } catch (error) {
+    console.error("Falha ao verificar prontidão do autoaperfeiçoamento:", safeDatabaseError(error));
+  }
+
+  const readiness = getSelfImprovementReadiness({
+    env: process.env,
+    databaseAvailable,
+    databaseInitialized,
+    providerCount: providers.length,
+    workerRunning: Boolean(selfImprovementWorker),
+  });
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  return res.status(readiness.ready ? 200 : 503).json({
+    service: "JARVIS",
+    selfImprovement: readiness,
   });
 });
 
