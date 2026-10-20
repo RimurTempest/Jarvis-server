@@ -1204,12 +1204,21 @@ app.get("/api/self-improvement/status", requireAuth, async (_req, res) => {
     console.error("Falha ao verificar prontidão do autoaperfeiçoamento:", safeDatabaseError(error));
   }
 
+  const runtimeHealthUrl = resolveRuntimeHealthUrl();
+  const autoMergeConfigured = isSelfImprovementAutoMergeConfigured({
+    env: process.env,
+    target: "server",
+    repository: process.env.JARVIS_GITHUB_REPOSITORY,
+    baseBranch: process.env.JARVIS_GITHUB_BASE_BRANCH || "main",
+    runtimeHealthUrl,
+  });
   const readiness = getSelfImprovementReadiness({
     env: process.env,
     databaseAvailable,
     databaseInitialized,
     providerCount: providers.length,
     workerRunning: Boolean(selfImprovementWorker?.isRunning?.()),
+    autoMergeConfigured,
   });
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
