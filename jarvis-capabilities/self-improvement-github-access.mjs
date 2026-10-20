@@ -1,17 +1,17 @@
 const API_ROOT = "https://api.github.com";
 const API_VERSION = "2022-11-28";
-const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$/;
 
 async function readGitHubEndpoint({ token, path, fetchImpl, timeoutMs }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   timeout.unref?.();
   try {
-    const response = await fetchImpl(\`\${API_ROOT}\${path}\`, {
+    const response = await fetchImpl(API_ROOT + path, {
       method: "GET",
       headers: {
         Accept: "application/vnd.github+json",
-        Authorization: \`Bearer \${token}\`,
+        Authorization: "Bearer " + token,
         "X-GitHub-Api-Version": API_VERSION,
       },
       signal: controller.signal,
@@ -66,22 +66,25 @@ export async function inspectSelfImprovementGitHubAccess({
     throw new TypeError("Configuração inválida para verificação de acesso GitHub.");
   }
 
-  const basePath = \`/repos/\${repository.trim()}\`;
-  const [repoCheck, pullCheck, workflowCheck] = await Promise.all([
+  const basePath = "/repos/" + repository.trim();
+  const results = await Promise.all([
     readGitHubEndpoint({ token, path: basePath, fetchImpl, timeoutMs }),
-    readGitHubEndpoint({ token, path: \`\${basePath}/pulls?state=open&per_page=1\`, fetchImpl, timeoutMs }),
-    readGitHubEndpoint({ token, path: \`\${basePath}/actions/runs?per_page=1\`, fetchImpl, timeoutMs }),
+    readGitHubEndpoint({ token, path: basePath + "/pulls?state=open&per_page=1", fetchImpl, timeoutMs }),
+    readGitHubEndpoint({ token, path: basePath + "/actions/runs?per_page=1", fetchImpl, timeoutMs }),
   ]);
+  const repoCheck = results[0];
+  const pullCheck = results[1];
+  const workflowCheck = results[2];
 
   const repositoryReadable = repoCheck.status === 200;
   const pullRequestsReadable = pullCheck.status === 200 && Array.isArray(pullCheck.payload);
   const workflowRunsReadable = workflowCheck.status === 200 && Array.isArray(workflowCheck.payload?.workflow_runs);
   const accountCanPush = repositoryReadable && repoCheck.payload?.permissions?.push === true;
-  const status = [repoCheck, pullCheck, workflowCheck].some((item) => item.status === 401)
+  const status = results.some((item) => item.status === 401)
     ? "github_token_rejected"
-    : [repoCheck, pullCheck, workflowCheck].some((item) => item.status === 404)
+    : results.some((item) => item.status === 404)
       ? "repository_or_permission_not_found"
-      : [repoCheck, pullCheck, workflowCheck].some((item) => item.status === null)
+      : results.some((item) => item.status === null)
         ? "network_or_timeout"
         : "checked";
 
