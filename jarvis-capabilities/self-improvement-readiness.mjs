@@ -11,11 +11,10 @@ function isValidBranch(value) {
     value.length <= 100 &&
     !value.startsWith("/") &&
     !value.endsWith("/") &&
-    !value.includes("\\") &&
+    !value.includes("..") &&
     !value.includes("\\") &&
     BRANCH_PATTERN.test(value);
 }
-
 /**
  * Reports only boolean readiness checks and missing setting names.
  * Never returns secret values or provider configuration contents.
