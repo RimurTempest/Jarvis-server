@@ -18,6 +18,7 @@ test("detects requests with a leading assistant name and different verbs", () =>
 test("detects direct capability requests phrased as becoming able to do something", () => {
   assert.equal(detectCapabilityLearningRequest("Quero que você consiga enviar e-mails.").goal, "enviar e-mails");
   assert.equal(detectCapabilityLearningRequest("Quero que você possa realizar chamadas.").goal, "realizar chamadas");
+  assert.equal(detectCapabilityLearningRequest("Quero que você consiga enviar e-mails. Pesquise como implementar e prepare uma atualização para revisão.").goal, "enviar e-mails");
   assert.equal(detectCapabilityLearningRequest("Preciso que você seja capaz de integrar uma API.").goal, "integrar uma API");
   assert.equal(detectCapabilityLearningRequest("I want you to be able to send emails.").goal, "send emails");
 });
