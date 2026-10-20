@@ -687,23 +687,31 @@ app.get("/", (_req, res) => {
 
 app.get("/health", async (_req, res) => {
   let database = "disconnected";
+  let learningMemoryReady = false;
+
   try {
     if (pool) {
       await pool.query("SELECT 1");
       database = "connected";
+
+      // Readiness checks must initialize the same persistent schema used by
+      // chat and learning routes, rather than reporting a false negative on
+      // a cold instance before the first authenticated request.
+      await initializeDatabase();
+      learningMemoryReady = databaseInitialized;
     }
   } catch (error) {
-    console.error("Falha no teste de conexão PostgreSQL:", safeDatabaseError(error));
-    database = "disconnected";
+    console.error("Falha na verificação de prontidão do PostgreSQL:", safeDatabaseError(error));
   }
-  const healthy = database === "connected" && providers.length > 0;
+
+  const healthy = database === "connected" && learningMemoryReady && providers.length > 0;
   res.status(healthy ? 200 : 503).json({
     status: healthy ? "ok" : "degraded",
     service: "JARVIS",
     database,
     aiProviders: providers.length,
     webSearchConfigured: Boolean(process.env.EXA_API_KEY),
-    persistentLearningMemory: database === "connected" && databaseInitialized,
+    persistentLearningMemory: learningMemoryReady,
   });
 });
 
