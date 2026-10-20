@@ -6,6 +6,7 @@ const TASK_STATES = Object.freeze([
 const TERMINAL_STATES = new Set(["completed", "blocked", "failed"]);
 const RISK_LEVELS = new Set(["low", "moderate", "high", "critical"]);
 const TARGETS = new Set(["server", "android", "external_service", "local_device", "unknown"]);
+const EXECUTABLE_TARGETS = new Set(["server", "android", "external_service", "local_device"]);
 const EXECUTION_STATES = new Set(["succeeded", "failed", "unverified", "needs_user_action"]);
 const SECRET_PATTERN = /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|senha|secret)\s*[:=]\s*[^\s,;]+|-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+[a-z0-9._-]{12,}/i;
 
@@ -14,6 +15,16 @@ function requiredText(value, field, max = 4000) {
   const result = value.trim();
   if (SECRET_PATTERN.test(result)) throw new TypeError(field + " parece conter credenciais; conteúdo recusado.");
   return result;
+}
+
+function isSafeEvidenceUrl(value) {
+  if (typeof value !== "string" || value.length > 2048) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 export function createUniversalTaskRequest({ id, originalRequest, goal, createdAt = new Date().toISOString() }) {
@@ -60,6 +71,7 @@ export function createUniversalTaskPlan(input) {
 export function canExecuteUniversalTask({ task, plan, adapterRegistry, authorization = {} }) {
   if (!task || task.state === "completed" || TERMINAL_STATES.has(task.state)) return { allowed: false, reason: "task_not_executable" };
   if (!plan || !TARGETS.has(plan.target)) return { allowed: false, reason: "plan_missing_or_invalid" };
+  if (!EXECUTABLE_TARGETS.has(plan.target)) return { allowed: false, reason: "target_not_resolved" };
   if (!adapterRegistry || typeof adapterRegistry.get !== "function") return { allowed: false, reason: "executor_registry_missing" };
   const availableKinds = new Set(plan.steps.map((step) => step.kind));
   for (const kind of availableKinds) {
@@ -82,8 +94,8 @@ function validateExecutionResult(result, stage) {
   if (!result || typeof result !== "object" || Array.isArray(result)) throw new TypeError(stage + " deve retornar um objeto estruturado.");
   if (!EXECUTION_STATES.has(result.status)) throw new TypeError(stage + ".status inválido.");
   if (typeof result.summary !== "string" || !result.summary.trim() || result.summary.length > 1000) throw new TypeError(stage + ".summary inválido.");
-  if (result.status === "succeeded" && (typeof result.evidence !== "string" || !/^https:\/\//.test(result.evidence))) {
-    throw new Error(stage + " não pode declarar sucesso sem uma referência de evidência HTTPS.");
+  if (result.status === "succeeded" && !isSafeEvidenceUrl(result.evidence)) {
+    throw new Error(stage + " não pode declarar sucesso sem uma URL HTTPS válida e sem credenciais embutidas.");
   }
   return { status: result.status, summary: result.summary.trim(), evidence: result.status === "succeeded" ? result.evidence : null };
 }
@@ -102,7 +114,7 @@ export async function executeUniversalTask({ task, plan, adapterRegistry, author
     let execution;
     try {
       execution = validateExecutionResult(await adapter.execute({ task, plan, step, context }), "executor");
-    } catch (error) {
+    } catch {
       return { status: "failed", reason: "executor_error", summary: "A etapa não foi concluída com segurança.", completedSteps: results, failedStep: step.kind };
     }
     results.push({ step: step.kind, ...execution });
