@@ -65,6 +65,12 @@ export function startSelfImprovementWorker({
 
   return {
     runOnce,
+    isRunning() {
+      return !stopped;
+    },
+    isBusy() {
+      return busy;
+    },
     stop() {
       stopped = true;
       clearInterval(timer);
