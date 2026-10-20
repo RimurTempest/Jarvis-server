@@ -1,6 +1,6 @@
 # JARVIS multi-provider AI configuration
 
-The server supports up to ten configured AI providers. Providers are called sequentially: the first successful, non-empty response wins. A failed provider does not stream partial text to the client, so the next provider receives the same complete message context.
+The server supports up to ten configured AI providers. For each individual chat request, providers are called strictly one at a time: the next provider is not started until the current provider has finished or failed, including an empty response. Providers for the same request are never called in parallel, so they cannot race or produce competing answers. The first successful, non-empty response wins. A failed provider does not stream partial text to the client, so the next provider receives the same complete message context. Separate user requests may still be handled concurrently.
 
 ## Configure providers in Render
 
