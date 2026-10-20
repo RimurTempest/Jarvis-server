@@ -4,6 +4,7 @@ import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
 import { randomUUID } from "node:crypto";
+import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext } from "./jarvis-capabilities/provider-failover-policy.mjs";
 import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
 import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
@@ -104,14 +105,6 @@ for (let index = 1; index <= MAX_AI_PROVIDERS; index += 1) {
 }
 registerProvider({ name: "Groq", apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL, baseURL: "https://api.groq.com/openai/v1" });
 registerProvider({ name: "OpenAI", apiKey: process.env.OPENAI_API_KEY, model: OPENAI_MODEL });
-
-function providerCooldownMs(error) {
-  const status = Number.isInteger(error?.status) ? error.status : 0;
-  if (status === 401 || status === 403) return 15 * 60 * 1000;
-  if (status === 429) return 60 * 1000;
-  if (status >= 500 || error?.code === "ETIMEDOUT" || error?.code === "ECONNRESET") return 20 * 1000;
-  return 0;
-}
 
 let databaseInitialization = null;
 let databaseInitialized = false;
@@ -972,11 +965,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     // Reservamos uma posição para acrescentar a mensagem atual explicitamente.
     history = await getRecentMessages(MAX_HISTORY_MESSAGES - 1, userMessageId);
     const olderContext = await getRelevantHistoricalMessages(message, 6);
-    const recentKeys = new Set(history.map((item) => `${item.role}: ${item.content}`));
-    history = [
-      ...olderContext.filter((item) => !recentKeys.has(`${item.role}: ${item.content}`)),
-      ...history,
-    ];
+    history = mergeHistoricalContext(olderContext, history);
   } catch (error) {
     console.error("Falha ao recuperar histórico anterior:", error?.name || "Error");
   }
@@ -1022,9 +1011,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     }
   });
 
-  const now = Date.now();
-  const availableProviders = providers.filter((provider) => (providerCooldowns.get(provider.name) ?? 0) <= now);
-  const providerOrder = availableProviders.length ? availableProviders : providers;
+  const providerOrder = orderProvidersByCooldown(providers, providerCooldowns);
 
   for (const provider of providerOrder) {
     if (clientDisconnected) return;
