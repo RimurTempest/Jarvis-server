@@ -1459,7 +1459,20 @@ app.post("/api/chat", requireAuth, async (req, res) => {
           capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: a solicitação foi colocada na fila com o ID ${queuedSelfImprovementRun.id}, alvo ${target.target}. O processo pesquisará, criará uma proposta em branch isolada e abrirá um pull request draft. Não afirme que o código foi implementado, testado, instalado ou implantado antes de evidência independente.`;
         } catch (error) {
           if (error?.code === "SELF_IMPROVEMENT_ALREADY_ACTIVE") {
-            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade. Não crie outra nem afirme que terminou.";
+            try {
+              const existingRun = await pool.query(
+                `SELECT id FROM jarvis_self_improvement_runs
+                 WHERE capability_id = $1
+                   AND state IN ('queued', 'researching', 'collecting_context', 'generating', 'publishing', 'merged')
+                 ORDER BY updated_at DESC
+                 LIMIT 1`,
+                [activeCapability.id],
+              );
+              if (existingRun.rows[0]?.id) queuedSelfImprovementRun = { id: existingRun.rows[0].id };
+            } catch {
+              // The chat still responds honestly if an active run cannot be looked up.
+            }
+            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade. O aplicativo pode acompanhar essa execução, mas não deve criar outra nem afirmar que terminou.";
           } else {
             console.error("Falha ao enfileirar solicitação de capacidade:", error?.name || "Error");
             capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Informe que a solicitação foi registrada/pesquisada, mas não prometa alteração de código.";
