@@ -24,6 +24,7 @@ import { initializeUniversalTaskStore, createUniversalTaskRecord, transitionUniv
 import { getSelfImprovementReadiness } from "./jarvis-capabilities/self-improvement-readiness.mjs";
 import { shouldShowSources } from "./jarvis-capabilities/source-display-policy.mjs";
 import { inspectSelfImprovementGitHubAccess } from "./jarvis-capabilities/self-improvement-github-access.mjs";
+import { getSelfImprovementVisualState } from "./jarvis-capabilities/self-improvement-visual-state.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -1538,6 +1539,7 @@ app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => 
       service: "JARVIS",
       notifications: result.rows.map((row) => ({
         ...row,
+        ...getSelfImprovementVisualState(row.state),
         notificationType: row.state === "runtime_verified"
           ? "capability_activated"
           : row.state === "rolled_back"
