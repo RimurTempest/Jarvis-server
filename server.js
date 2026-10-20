@@ -92,11 +92,8 @@ function registerProvider({ name, apiKey, model, baseURL = null }) {
   providers.push({ name: safeName, model, client: new OpenAI(clientOptions) });
 }
 
-registerProvider({ name: "Groq", apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL, baseURL: "https://api.groq.com/openai/v1" });
-registerProvider({ name: "OpenAI", apiKey: process.env.OPENAI_API_KEY, model: OPENAI_MODEL });
-
-// Additional OpenAI-compatible providers: JARVIS_PROVIDER_1_NAME/API_KEY/BASE_URL/MODEL.
-// The total, including Groq/OpenAI, is capped at ten.
+// Custom providers take priority. Configure up to ten slots; legacy Groq/OpenAI
+// are appended as fallback entries only when capacity remains.
 for (let index = 1; index <= MAX_AI_PROVIDERS; index += 1) {
   const prefix = `JARVIS_PROVIDER_${index}_`;
   const apiKey = process.env[`${prefix}API_KEY`];
@@ -105,6 +102,8 @@ for (let index = 1; index <= MAX_AI_PROVIDERS; index += 1) {
   if (!apiKey || !baseURL || !model) continue;
   registerProvider({ name: process.env[`${prefix}NAME`] || `Provider-${index}`, apiKey, baseURL, model });
 }
+registerProvider({ name: "Groq", apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL, baseURL: "https://api.groq.com/openai/v1" });
+registerProvider({ name: "OpenAI", apiKey: process.env.OPENAI_API_KEY, model: OPENAI_MODEL });
 
 function providerCooldownMs(error) {
   const status = Number.isInteger(error?.status) ? error.status : 0;
@@ -357,6 +356,7 @@ async function initializeDatabase() {
     await initializeActionQueue(pool);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_learning_events_type ON jarvis_learning_events (event_type, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_messages_created ON jarvis_messages (created_at DESC, id DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_messages_content_fts ON jarvis_messages USING GIN (to_tsvector('simple', content))`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_memories_updated ON jarvis_memories (updated_at DESC, id DESC)`);
 
     while (true) {
@@ -490,6 +490,28 @@ async function getRecentMessages(limit = MAX_HISTORY_MESSAGES, excludeMessageId 
     [safeLimit, excludeMessageId]
   );
   return result.rows;
+}
+
+async function getRelevantHistoricalMessages(message, limit = 6) {
+  const terms = [...new Set(normalizeText(message).split(/\s+/).filter((term) => term.length >= 4 && /^[a-z0-9]+$/.test(term)))].slice(0, 8);
+  const safeLimit = Math.max(0, Math.min(8, Number(limit) || 0));
+  if (!terms.length || safeLimit === 0) return [];
+  const searchQuery = terms.map((term) => `${term}:*`).join(" | ");
+  const result = await pool.query(
+    `SELECT role, content
+     FROM jarvis_messages
+     WHERE id < (
+       SELECT COALESCE(MIN(id), 0)
+       FROM (SELECT id FROM jarvis_messages ORDER BY id DESC LIMIT $2) recent
+     )
+       AND to_tsvector('simple', content) @@ to_tsquery('simple', $1)
+     ORDER BY ts_rank_cd(to_tsvector('simple', content), to_tsquery('simple', $1)) DESC, id DESC
+     LIMIT $3`,
+    [searchQuery, MAX_HISTORY_MESSAGES, safeLimit]
+  );
+  // Do not reintroduce old messages that look like they contain credentials or
+  // high-risk identifiers into the context sent to an external model.
+  return result.rows.filter((row) => !looksSensitive(row.content));
 }
 
 async function listMemories(limit = 100) {
@@ -949,8 +971,14 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   try {
     // Reservamos uma posição para acrescentar a mensagem atual explicitamente.
     history = await getRecentMessages(MAX_HISTORY_MESSAGES - 1, userMessageId);
+    const olderContext = await getRelevantHistoricalMessages(message, 6);
+    const recentKeys = new Set(history.map((item) => `${item.role}: ${item.content}`));
+    history = [
+      ...olderContext.filter((item) => !recentKeys.has(`${item.role}: ${item.content}`)),
+      ...history,
+    ];
   } catch (error) {
-    console.error("Falha ao recuperar histórico anterior:", error.message);
+    console.error("Falha ao recuperar histórico anterior:", error?.name || "Error");
   }
 
   const capabilityAlreadyReusable = Boolean(activeCapability && capabilityCanBeReused(activeCapability));
