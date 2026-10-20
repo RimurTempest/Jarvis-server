@@ -371,7 +371,18 @@ async function processSelfImprovementRun(run) {
               for (const task of linkedTasks.rows) {
                 const currentIndex = stateOrder.indexOf(task.state);
                 const targetIndex = stateOrder.indexOf(targetState);
-                if (currentIndex < 0 || targetIndex < currentIndex) continue;
+                if (currentIndex < 0) continue;
+                if (targetIndex < currentIndex) {
+                  // Uma tentativa de reparo pode voltar de testes para implementação.
+                  if (task.state === "testing" && targetState === "implementing") {
+                    await transitionUniversalTaskRecord(pool, {
+                      id: task.id,
+                      state: "implementing",
+                      summary: taskSummaries.implementing,
+                    });
+                  }
+                  continue;
+                }
                 for (let index = currentIndex + 1; index <= targetIndex; index += 1) {
                   await transitionUniversalTaskRecord(pool, {
                     id: task.id,
