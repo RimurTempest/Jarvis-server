@@ -64,8 +64,9 @@ export function registerAndroidActionRoutes(app, {
       await ensureRegistry();
       const authorization = req.headers?.authorization;
       const match = typeof authorization === "string" ? /^Bearer\s+([^\s]+)$/i.exec(authorization) : null;
+      const deviceId = req.headers?.["x-jarvis-device-id"];
       const result = await authenticateAndroidDevice(pool, {
-        deviceId: req.headers?.["x-jarvis-device-id"],
+        deviceId,
         token: match?.[1],
       });
       if (!result.ok) return sendError(res, 401, "Dispositivo Android não autorizado.");
@@ -109,8 +110,19 @@ export function registerAndroidActionRoutes(app, {
       if (error?.code === "DEVICE_ALREADY_REGISTERED") return sendError(res, 409, "O dispositivo já está registrado.");
       if (error?.code === "PAIRING_CODE_INVALID") return sendError(res, 400, "Código de pareamento inválido ou expirado.");
       if (error instanceof TypeError) return sendError(res, 400, "Dados de pareamento inválidos.");
+      console.error("Falha ao concluir pareamento Android:", error?.message || "erro desconhecido");
       return sendError(res, 500, "Não foi possível registrar o dispositivo.");
     }
+  });
+
+  // Fonte de verdade para a interface Android: só retorna vinculado após
+  // validar o deviceId e o token contra o registro ativo no banco.
+  app.get("/api/android/enrollment/status", authenticate, (req, res) => {
+    return res.status(200).json({
+      linked: true,
+      deviceId: req.headers["x-jarvis-device-id"],
+      checkedAt: new Date().toISOString(),
+    });
   });
 
   app.post("/api/android/devices/:id/revoke", async (req, res) => {
