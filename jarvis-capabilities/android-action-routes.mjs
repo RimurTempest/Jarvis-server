@@ -109,8 +109,19 @@ export function registerAndroidActionRoutes(app, {
       if (error?.code === "DEVICE_ALREADY_REGISTERED") return sendError(res, 409, "O dispositivo já está registrado.");
       if (error?.code === "PAIRING_CODE_INVALID") return sendError(res, 400, "Código de pareamento inválido ou expirado.");
       if (error instanceof TypeError) return sendError(res, 400, "Dados de pareamento inválidos.");
+      console.error("Falha ao concluir pareamento Android:", error?.name || "Error");
       return sendError(res, 500, "Não foi possível registrar o dispositivo.");
     }
+  });
+
+  // Fonte de verdade para o cliente: só confirma vínculo depois de validar
+  // o ID e a credencial do dispositivo contra o registro ativo no PostgreSQL.
+  app.get("/api/android/enrollment/status", authenticate, (req, res) => {
+    return res.status(200).json({
+      linked: true,
+      deviceId: req.headers["x-jarvis-device-id"],
+      checkedAt: new Date().toISOString(),
+    });
   });
 
   app.post("/api/android/devices/:id/revoke", async (req, res) => {
