@@ -187,6 +187,15 @@ test("final state requires exact PR metadata and errors require safe codes", asy
   assert.equal(verified.state, "runtime_verified");
   assert.equal(fakePool.lastParams[4], "d".repeat(40));
   assert.equal(fakePool.lastParams[5], "d".repeat(40));
+
+  fakePool.currentState = "merged";
+  const unverified = await updateSelfImprovementRun(fakePool, "11111111-1111-4111-8111-111111111111", "merge_unverified", {
+    ...metadata,
+    errorCode: "runtime_verification_interrupted",
+  });
+  assert.equal(unverified.state, "merge_unverified");
+  assert.equal(fakePool.lastParams[5], "d".repeat(40));
+  assert.equal(fakePool.lastParams[11], "runtime_verification_interrupted");
 });
 
 
