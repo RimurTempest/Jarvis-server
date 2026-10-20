@@ -72,6 +72,9 @@ test("blocks invalid transitions and secret-bearing requests", async () => {
   await createUniversalTaskRecord(pool, { id, originalRequest: "Fazer uma tarefa", goal: "Fazer uma tarefa" });
   await transitionUniversalTaskRecord(pool, { id, state: "blocked", blocker: "Nenhum executor disponível." });
   await assert.rejects(() => transitionUniversalTaskRecord(pool, { id, state: "completed" }), /Transição/);
+  const resumed = await transitionUniversalTaskRecord(pool, { id, state: "researching", summary: "Retomada após resolver o bloqueio." });
+  assert.equal(resumed.state, "researching");
+  await assert.rejects(() => transitionUniversalTaskRecord(pool, { id, state: "blocked", blocker: "token=abc123" }), /credenciais/);
   await assert.rejects(() => createUniversalTaskRecord(pool, { id: "33333333-3333-4333-8333-333333333333", originalRequest: "token=abc123", goal: "Fazer uma tarefa" }), /credenciais/);
 });
 
