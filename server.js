@@ -1646,21 +1646,15 @@ app.post("/api/chat", requireAuth, async (req, res) => {
               );
               if (existingRun.rows[0]?.id) queuedSelfImprovementRun = { id: existingRun.rows[0].id };
             } catch {}
-            capabilityContext += "
-
-PIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade; não será criada outra.";
+            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade; não será criada outra.";
           } else {
             console.error("Falha ao enfileirar solicitação de capacidade:", error?.name || "Error");
-            capabilityContext += "
-
-PIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Não prometa alteração de código.";
+            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Não prometa alteração de código.";
           }
         }
       }
     } else {
-      capabilityContext += "
-
-PIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: falta configuração segura de geração/publicação. Não prometa gerar ou publicar uma atualização.";
+      capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: falta configuração segura de geração/publicação. Não prometa gerar ou publicar uma atualização.";
     }
   }
   if (universalTaskId) {
