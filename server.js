@@ -21,6 +21,7 @@ import { runSelfImprovementCiRepairLoop } from "./jarvis-capabilities/self-impro
 import { mergeValidatedSelfImprovementDraft } from "./jarvis-capabilities/self-improvement-auto-activation.mjs";
 import { resolveRuntimeHealthUrl, verifyRuntimeRevision, revertMergedCommitSafely, isSelfImprovementAutoMergeConfigured } from "./jarvis-capabilities/self-improvement-runtime-guard.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
+import { initializeUniversalTaskStore, createUniversalTaskRecord, transitionUniversalTaskRecord, getUniversalTaskRecord } from "./jarvis-capabilities/universal-task-store.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -665,6 +666,7 @@ async function initializeDatabase() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_capabilities_state_updated ON jarvis_capabilities (state, updated_at DESC)`);
     await initializeSelfImprovementRunQueue(pool);
     await initializeActionQueue(pool);
+    await initializeUniversalTaskStore(pool);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_learning_events_type ON jarvis_learning_events (event_type, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_messages_created ON jarvis_messages (created_at DESC, id DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_memories_updated ON jarvis_memories (updated_at DESC, id DESC)`);
@@ -1122,6 +1124,20 @@ app.get("/api/capabilities/:id/proposals/:runId/validation", requireAuth, async 
   }
 });
 
+app.get("/api/tasks/:id", requireAuth, async (req, res) => {
+  const id = typeof req.params.id === "string" ? req.params.id : "";
+  try {
+    await initializeDatabase();
+    const task = await getUniversalTaskRecord(pool, id);
+    if (!task) return res.status(404).json({ error: "Tarefa não encontrada." });
+    return res.json({ task });
+  } catch (error) {
+    if (error instanceof TypeError) return res.status(400).json({ error: "ID de tarefa inválido." });
+    console.error("Falha ao consultar tarefa universal:", error?.name || "Error");
+    return res.status(503).json({ error: "Não foi possível consultar o estado da tarefa." });
+  }
+});
+
 app.post("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
   const id = typeof req.params.id === "string" ? req.params.id : "";
   if (!id || id.length > 100) return res.status(400).json({ error: "ID de capacidade inválido." });
@@ -1374,6 +1390,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   let capabilityContext = "";
   let activeCapability = null;
   let queuedSelfImprovementRun = null;
+  let universalTaskId = null;
   if (capabilityLearningRequest) {
     try {
       const candidates = await pool.query(
@@ -1416,10 +1433,28 @@ app.post("/api/chat", requireAuth, async (req, res) => {
         activeCapability = researching;
       }
 
+      if (!looksSensitive(message)) {
+        try {
+          const universalTask = await createUniversalTaskRecord(pool, {
+            id: randomUUID(),
+            capabilityId: activeCapability.id,
+            originalRequest: message,
+            goal: capabilityLearningRequest.goal,
+          });
+          universalTaskId = universalTask.id;
+        } catch (taskError) {
+          console.error("Falha ao registrar tarefa universal:", taskError?.name || "Error");
+          capabilityContext += "\n\nREGISTRO DA TAREFA: não foi possível criar o acompanhamento persistente. Não afirme que o estado da tarefa foi salvo.";
+        }
+      } else {
+        capabilityContext += "\n\nREGISTRO DA TAREFA: acompanhamento omitido porque a mensagem pode conter dados sensíveis.";
+      }
+
       const reusableCapability = capabilityCanBeReused(activeCapability);
+      capabilityContext += "\n\nPROTOCOLO UNIVERSAL DE EXECUÇÃO: trate o pedido como tarefa, não como pedido de tutorial. Pesquise, prepare e valide a capacidade necessária; execute apenas por adaptador autorizado e verifique o resultado. Se não houver executor, permissão ou destino confirmado, informe o bloqueio sem alegar conclusão.";
       capabilityContext = buildCapabilityPromptContext(activeCapability, {
         reusable: reusableCapability,
-      });
+      }) + capabilityContext;
     } catch (error) {
       console.error("Falha ao registrar intenção de aprendizado de capacidade:", error.message);
       capabilityContext = "\n\nO usuário pediu para aprender uma capacidade, mas o registro persistente falhou. Não afirme que a solicitação foi salva nem que a capacidade foi aprendida.";
@@ -1505,6 +1540,30 @@ app.post("/api/chat", requireAuth, async (req, res) => {
       capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: a configuração segura de geração/publicação não está completa. Você pode pesquisar e planejar, mas não afirme que vai implementar, gerar uma versão ou publicar uma atualização.";
     }
   }
+  if (universalTaskId) {
+    try {
+      if (queuedSelfImprovementRun) {
+        await transitionUniversalTaskRecord(pool, {
+          id: universalTaskId,
+          state: "researching",
+          summary: "Solicitação enfileirada para pesquisa e preparação de uma proposta isolada; ainda não executada.",
+          runId: queuedSelfImprovementRun.id,
+        });
+      } else {
+        await transitionUniversalTaskRecord(pool, {
+          id: universalTaskId,
+          state: "blocked",
+          summary: "A tarefa foi registrada, mas nenhuma execução foi iniciada.",
+          blocker: capabilityAlreadyReusable
+            ? "A capacidade existente ainda não tem um adaptador de execução verificado ligado a este fluxo."
+            : "O pipeline de implementação ou um destino autorizado não está disponível.",
+        });
+      }
+    } catch (taskError) {
+      console.error("Falha ao atualizar estado da tarefa universal:", taskError?.name || "Error");
+    }
+  }
+
   // A tool call is only a proposal. The strict allowlist, target-device binding,
   // short expiry, and explicit confirmation in Android remain mandatory.
   let proposedAndroidAction = null;
@@ -1578,6 +1637,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     sendEvent(res, "self_improvement_started", {
       runId: queuedSelfImprovementRun.id,
+      taskId: universalTaskId,
       capabilityId: activeCapability?.id ?? null,
       goal: activeCapability?.goal ?? message,
       target: resolveSelfImprovementTarget(activeCapability?.goal ?? message).target,
