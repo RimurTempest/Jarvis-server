@@ -8,7 +8,7 @@ const RISK_LEVELS = new Set(["low", "moderate", "high", "critical"]);
 const TARGETS = new Set(["server", "android", "external_service", "local_device", "unknown"]);
 const EXECUTABLE_TARGETS = new Set(["server", "android", "external_service", "local_device"]);
 const EXECUTION_STATES = new Set(["succeeded", "failed", "unverified", "needs_user_action"]);
-const SECRET_PATTERN = /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|senha|secret)\s*[:=]\s*[^\s,;]+|-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+[a-z0-9._-]{12,}/i;
+const SECRET_PATTERN = /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|credential|authorization|password|senha|secret|chave(?:\s+de\s+acesso)?)\s*[:=]\s*[^\s,;]+|-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+[a-z0-9._-]{12,}/i;
 
 function requiredText(value, field, max = 4000) {
   if (typeof value !== "string" || !value.trim() || value.length > max) throw new TypeError(field + " inválido.");
