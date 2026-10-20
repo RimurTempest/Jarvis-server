@@ -955,46 +955,63 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   let clientDisconnected = false;
   let responseText = "";
   let providerSucceeded = false;
-  let emittedAnyText = false;
+  const requestId = randomUUID();
 
-  req.on("aborted", () => { clientDisconnected = true; });
-  res.on("close", () => { if (!res.writableEnded) clientDisconnected = true; });
+  // Registra o percurso técnico sem guardar a mensagem, tokens ou credenciais.
+  console.info(`[chat] request_id=${requestId} event=received message_chars=${message.length} providers=${providers.length}`);
+  req.on("aborted", () => {
+    clientDisconnected = true;
+    console.warn(`[chat] request_id=${requestId} event=client_aborted`);
+  });
+  res.on("close", () => {
+    if (!res.writableEnded) {
+      clientDisconnected = true;
+      console.warn(`[chat] request_id=${requestId} event=client_disconnected`);
+    }
+  });
 
   for (const provider of providers) {
     if (clientDisconnected) return;
+    const providerStartedAt = Date.now();
     try {
       const stream = await openStream(provider, messages);
       let providerText = "";
       for await (const chunk of stream) {
         if (clientDisconnected) return;
         const delta = chunk.choices?.[0]?.delta?.content;
-        if (typeof delta === "string" && delta.length > 0) {
-          providerText += delta;
-          if (!sendEvent(res, "delta", { text: delta })) {
-            clientDisconnected = true;
-            return;
-          }
-          emittedAnyText = true;
-        }
+        if (typeof delta === "string" && delta.length > 0) providerText += delta;
       }
-      if (!providerText.trim()) throw new Error(`${provider.name} retornou uma resposta vazia.`);
+      if (!providerText.trim()) {
+        const emptyError = new Error("Resposta vazia do provedor.");
+        emptyError.code = "EMPTY_RESPONSE";
+        throw emptyError;
+      }
+
+      // Só envia texto depois que o provedor conclui. Assim, uma falha parcial
+      // não contamina a resposta nem impede uma tentativa limpa no próximo provedor.
       responseText = providerText;
       providerSucceeded = true;
+      console.info(`[chat] request_id=${requestId} event=provider_succeeded provider=${provider.name} duration_ms=${Date.now() - providerStartedAt} response_chars=${providerText.length}`);
       break;
     } catch (error) {
-      console.error(`Falha no provedor ${provider.name}:`, error.message);
+      const status = Number.isInteger(error?.status) ? error.status : "unknown";
+      const code = typeof error?.code === "string" && /^[A-Z0-9_-]{1,40}$/i.test(error.code)
+        ? error.code
+        : "PROVIDER_ERROR";
+      console.error(`[chat] request_id=${requestId} event=provider_failed provider=${provider.name} status=${status} code=${code} duration_ms=${Date.now() - providerStartedAt}`);
       if (res.destroyed || clientDisconnected) return;
-      if (emittedAnyText) {
-        sendEvent(res, "error", { message: "A resposta foi interrompida. Tente novamente." });
-        return res.end();
-      }
     }
   }
 
   if (!providerSucceeded) {
+    console.error(`[chat] request_id=${requestId} event=all_providers_failed provider_count=${providers.length}`);
     sendEvent(res, "error", { message: "Os provedores de IA não conseguiram responder. Tente novamente." });
     return res.end();
   }
+
+  // Emite a resposta concluída em um único evento para preservar a integridade
+  // caso um provedor falhe depois de começar a gerar texto.
+  if (!sendEvent(res, "delta", { text: responseText })) return res.end();
 
   // O servidor adiciona os links de forma determinística, garantindo que a resposta
   // pesquisada contenha as URLs realmente retornadas pela API, sem depender do modelo.
@@ -1007,11 +1024,12 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   try {
     await saveMessage("assistant", responseText);
   } catch (error) {
-    console.error("Falha ao persistir resposta:", error.message);
+    console.error(`[chat] request_id=${requestId} event=response_persist_failed`);
     sendEvent(res, "error", { message: "Resposta enviada, mas não foi possível salvá-la no histórico." });
     return res.end();
   }
 
+  console.info(`[chat] request_id=${requestId} event=completed response_chars=${responseText.length}`);
   sendEvent(res, "done", {});
   return res.end();
 });
