@@ -11,7 +11,7 @@ For each provider slot, add these environment variables:
 - `JARVIS_PROVIDER_1_BASE_URL`: HTTPS endpoint compatible with the OpenAI Chat Completions API
 - `JARVIS_PROVIDER_1_MODEL`: model identifier accepted by that endpoint
 
-Repeat the four variables with slot numbers `2` through `10`. Only complete slots are enabled. Custom slots are tried first in numeric order. Existing `GROQ_API_KEY` and `OPENAI_API_KEY` configuration remains supported as fallback entries when there is room under the ten-provider cap. If you configure all ten custom slots, the legacy entries are not added separately.
+Repeat the four variables with slot numbers `2` through `10`. Only complete slots are enabled. Custom slots are tried first in numeric order. Existing `GROQ_API_KEY` configuration remains supported as a fallback when there is room under the ten-provider cap. If you configure all ten custom slots, Groq is not added separately. Paid OpenAI fallback is disabled by default; it is only registered when `JARVIS_ALLOW_PAID_OPENAI=true` is explicitly set. Leave this unset for the free-only configuration.
 
 For safety, custom endpoints must use HTTPS. HTTP is accepted only for localhost/127.0.0.1 development endpoints. API keys must be stored as Render environment variables, never committed to Git.
 
