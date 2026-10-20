@@ -79,6 +79,9 @@ export function canExecuteUniversalTask({ task, plan, adapterRegistry, authoriza
     if (!adapter || typeof adapter.execute !== "function" || typeof adapter.verify !== "function") {
       return { allowed: false, reason: "executor_unavailable", missingExecutor: kind };
     }
+    if (adapter.target !== plan.target) {
+      return { allowed: false, reason: "executor_target_mismatch", missingExecutor: kind };
+    }
   }
   if (plan.requiresConfirmation && authorization.confirmed !== true) return { allowed: false, reason: "explicit_confirmation_required" };
   if (plan.requiredPermissions.some((permission) => !Array.isArray(authorization.grantedPermissions) || !authorization.grantedPermissions.includes(permission))) {
