@@ -80,6 +80,23 @@ test("does not treat malformed repository values as configured targets", () => {
   assert.equal(result.targets.server, false);
 });
 
+test("does not report ready when no target repository is configured", () => {
+  const result = getSelfImprovementReadiness({
+    env: {
+      JARVIS_SELF_IMPROVEMENT_ENABLED: "true",
+      EXA_API_KEY: "exa-test-key",
+      JARVIS_GITHUB_TOKEN: "x".repeat(24),
+    },
+    databaseAvailable: true,
+    databaseInitialized: true,
+    providerCount: 1,
+    workerRunning: true,
+  });
+  assert.equal(result.ready, false);
+  assert.equal(result.pipelineConfigured, false);
+  assert.ok(result.missingRequirements.includes("targetRepository"));
+});
+
 test("reports auto-merge only as an explicit opt-in, not as a guarantee", () => {
   const result = getSelfImprovementReadiness({
     env: {
