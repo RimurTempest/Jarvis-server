@@ -528,6 +528,20 @@ async function processSelfImprovementRun(run) {
     await updateSelfImprovementRun(pool, run.id, "draft_pr_created", persistedRunMetadata);
   }
 
+  const taskSummary = finalState === "draft_pr_created"
+    ? "A proposta de implementação foi criada e aguarda revisão; a tarefa solicitada ainda não foi executada."
+    : finalState === "runtime_verified"
+      ? "A revisão de código foi implantada e verificada; a ação original ainda não foi executada."
+      : finalState === "rolled_back"
+        ? "A proposta não permaneceu ativa após a verificação; a ação original não foi executada."
+        : finalState === "merge_unverified"
+          ? "O estado da alteração não pôde ser confirmado; a ação original não foi executada."
+          : "A proposta foi processada; a ação original ainda precisa de autorização e execução verificável.";
+  await pool.query(
+    "UPDATE jarvis_universal_tasks SET state = 'awaiting_approval', summary = $2, blocker = NULL, updated_at = NOW() WHERE run_id = $1 AND state = 'researching'",
+    [run.id, taskSummary],
+  ).catch(() => {});
+
   const terminalEvents = {
     runtime_verified: {
       type: "self_improvement_runtime_verified",
@@ -617,6 +631,10 @@ async function handleSelfImprovementRunFailure(run, error) {
   } catch {
     // Do not leak provider or repository response details through the worker.
   }
+  await pool.query(
+    "UPDATE jarvis_universal_tasks SET state = 'blocked', summary = $2, blocker = $3, updated_at = NOW() WHERE run_id = $1 AND state = 'researching'",
+    [run.id, "A preparação da capacidade não terminou; nenhuma execução da tarefa original foi confirmada.", "Pipeline de autoaperfeiçoamento interrompido."],
+  ).catch(() => {});
   const errorName = typeof error?.name === "string" ? error.name.slice(0, 80) : "Error";
   console.error(`Execução de autoaperfeiçoamento interrompida (${errorName}); nenhuma implantação foi feita.`);
 }
