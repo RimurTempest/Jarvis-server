@@ -22,7 +22,7 @@ universal-capability-execution.mjs defines a generic task/plan contract, allowli
 
 ## Integration boundary
 
-This contract alone does not make every real-world action available. Each real capability still needs a concrete adapter for its target environment, credentials supplied through secure authorization flows, tests, and routing from natural-language chat. The existing self-improvement pipeline can research a new capability and create a draft PR, but the new adapter must be integrated and validated before JARVIS can claim it has executed a real task. Android installation and operating-system permissions remain explicit gates.
+The chat route is now connected to persistent task tracking and the existing self-improvement queue. This is orchestration, not a universal executor: each real capability still needs a concrete adapter for its target environment, credentials supplied through secure authorization flows, tests, and trusted result verification. The self-improvement pipeline can research a new capability and create a draft PR; the task status is then awaiting_approval, not completed. The original user-requested action still requires a working adapter and independent execution evidence. Android installation and operating-system permissions remain explicit gates.
 
 ## Safety defaults
 
