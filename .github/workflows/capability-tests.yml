@@ -25,6 +25,8 @@ jobs:
           node-version: 20
       - name: Check capability module syntax
         run: |
+          node --check jarvis-capabilities/provider-failover-policy.mjs
+          node --check jarvis-capabilities/test/provider-failover-policy.test.mjs
           node --check jarvis-capabilities/capability-prompt-context.mjs
           node --check jarvis-capabilities/capability-registry.mjs
           node --check jarvis-capabilities/capability-validation-policy.mjs
@@ -46,6 +48,7 @@ jobs:
           node --check jarvis-capabilities/test/android-action-routes.test.mjs
       - name: Run capability tests
         run: |
+          node --test jarvis-capabilities/test/provider-failover-policy.test.mjs
           node --test jarvis-capabilities/test/capability-prompt-context.test.mjs
           node --test jarvis-capabilities/test/capability-registry.test.mjs
           node --test jarvis-capabilities/test/capability-validation-policy.test.mjs

@@ -4,6 +4,7 @@ import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
 import { randomUUID } from "node:crypto";
+import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext, runProvidersSequentially } from "./jarvis-capabilities/provider-failover-policy.mjs";
 import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
 import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
@@ -65,30 +66,47 @@ const pool = process.env.DATABASE_URL
   : null;
 
 const providers = [];
+const providerCooldowns = new Map();
+const MAX_AI_PROVIDERS = 10;
 
-if (process.env.GROQ_API_KEY) {
-  providers.push({
-    name: "Groq",
-    model: GROQ_MODEL,
-    client: new OpenAI({
-      apiKey: process.env.GROQ_API_KEY,
-      baseURL: "https://api.groq.com/openai/v1",
-      timeout: 45000,
-      maxRetries: 0,
-    }),
-  });
+function registerProvider({ name, apiKey, model, baseURL = null }) {
+  if (providers.length >= MAX_AI_PROVIDERS || !apiKey || !model) return;
+  const safeName = String(name || `Provider-${providers.length + 1}`)
+    .replace(/[^a-zA-Z0-9 _.-]/g, "")
+    .trim()
+    .slice(0, 40) || `Provider-${providers.length + 1}`;
+  if (providers.some((provider) => provider.name.toLowerCase() === safeName.toLowerCase())) return;
+  const clientOptions = { apiKey, timeout: 45000, maxRetries: 0 };
+  if (baseURL) {
+    try {
+      const parsed = new URL(baseURL);
+      if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname))) {
+        console.warn(`Provedor ignorado por URL insegura: ${safeName}`);
+        return;
+      }
+      clientOptions.baseURL = parsed.toString().replace(/\/$/, "");
+    } catch {
+      console.warn(`Provedor ignorado por URL inválida: ${safeName}`);
+      return;
+    }
+  }
+  providers.push({ name: safeName, model, client: new OpenAI(clientOptions) });
 }
 
-if (process.env.OPENAI_API_KEY) {
-  providers.push({
-    name: "OpenAI",
-    model: OPENAI_MODEL,
-    client: new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      timeout: 45000,
-      maxRetries: 0,
-    }),
-  });
+// Custom providers take priority. Configure up to ten slots; legacy Groq/OpenAI
+// are appended as fallback entries only when capacity remains.
+for (let index = 1; index <= MAX_AI_PROVIDERS; index += 1) {
+  const prefix = `JARVIS_PROVIDER_${index}_`;
+  const apiKey = process.env[`${prefix}API_KEY`];
+  const baseURL = process.env[`${prefix}BASE_URL`];
+  const model = process.env[`${prefix}MODEL`];
+  if (!apiKey || !baseURL || !model) continue;
+  registerProvider({ name: process.env[`${prefix}NAME`] || `Provider-${index}`, apiKey, baseURL, model });
+}
+registerProvider({ name: "Groq", apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL, baseURL: "https://api.groq.com/openai/v1" });
+// Paid OpenAI API usage is opt-in; keep it disabled by default for a free-only setup.
+if (process.env.JARVIS_ALLOW_PAID_OPENAI === "true") {
+  registerProvider({ name: "OpenAI", apiKey: process.env.OPENAI_API_KEY, model: OPENAI_MODEL });
 }
 
 let databaseInitialization = null;
@@ -334,6 +352,7 @@ async function initializeDatabase() {
     await initializeActionQueue(pool);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_learning_events_type ON jarvis_learning_events (event_type, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_messages_created ON jarvis_messages (created_at DESC, id DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_messages_content_fts ON jarvis_messages USING GIN (to_tsvector('simple', content))`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_memories_updated ON jarvis_memories (updated_at DESC, id DESC)`);
 
     while (true) {
@@ -467,6 +486,28 @@ async function getRecentMessages(limit = MAX_HISTORY_MESSAGES, excludeMessageId 
     [safeLimit, excludeMessageId]
   );
   return result.rows;
+}
+
+async function getRelevantHistoricalMessages(message, limit = 6) {
+  const terms = [...new Set(normalizeText(message).split(/\s+/).filter((term) => term.length >= 4 && /^[a-z0-9]+$/.test(term)))].slice(0, 8);
+  const safeLimit = Math.max(0, Math.min(8, Number(limit) || 0));
+  if (!terms.length || safeLimit === 0) return [];
+  const searchQuery = terms.map((term) => `${term}:*`).join(" | ");
+  const result = await pool.query(
+    `SELECT role, content
+     FROM jarvis_messages
+     WHERE id < (
+       SELECT COALESCE(MIN(id), 0)
+       FROM (SELECT id FROM jarvis_messages ORDER BY id DESC LIMIT $2) recent
+     )
+       AND to_tsvector('simple', content) @@ to_tsquery('simple', $1)
+     ORDER BY ts_rank_cd(to_tsvector('simple', content), to_tsquery('simple', $1)) DESC, id DESC
+     LIMIT $3`,
+    [searchQuery, MAX_HISTORY_MESSAGES, safeLimit]
+  );
+  // Do not reintroduce old messages that look like they contain credentials or
+  // high-risk identifiers into the context sent to an external model.
+  return result.rows.filter((row) => !looksSensitive(row.content));
 }
 
 async function listMemories(limit = 100) {
@@ -926,8 +967,10 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   try {
     // Reservamos uma posição para acrescentar a mensagem atual explicitamente.
     history = await getRecentMessages(MAX_HISTORY_MESSAGES - 1, userMessageId);
+    const olderContext = await getRelevantHistoricalMessages(message, 6);
+    history = mergeHistoricalContext(olderContext, history);
   } catch (error) {
-    console.error("Falha ao recuperar histórico anterior:", error.message);
+    console.error("Falha ao recuperar histórico anterior:", error?.name || "Error");
   }
 
   const capabilityAlreadyReusable = Boolean(activeCapability && capabilityCanBeReused(activeCapability));
@@ -971,37 +1014,47 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     }
   });
 
-  for (const provider of providers) {
-    if (clientDisconnected) return;
-    const providerStartedAt = Date.now();
-    try {
+  const providerOrder = orderProvidersByCooldown(providers, providerCooldowns);
+  let providerStartedAt = 0;
+
+  const providerResult = await runProvidersSequentially(
+    providerOrder,
+    async (provider) => {
+      providerStartedAt = Date.now();
       const stream = await openStream(provider, messages);
       let providerText = "";
       for await (const chunk of stream) {
-        if (clientDisconnected) return;
+        if (clientDisconnected) {
+          const disconnectError = new Error("Cliente desconectado.");
+          disconnectError.code = "CLIENT_DISCONNECTED";
+          throw disconnectError;
+        }
         const delta = chunk.choices?.[0]?.delta?.content;
         if (typeof delta === "string" && delta.length > 0) providerText += delta;
       }
-      if (!providerText.trim()) {
-        const emptyError = new Error("Resposta vazia do provedor.");
-        emptyError.code = "EMPTY_RESPONSE";
-        throw emptyError;
-      }
-
-      // Só envia texto depois que o provedor conclui. Assim, uma falha parcial
-      // não contamina a resposta nem impede uma tentativa limpa no próximo provedor.
-      responseText = providerText;
-      providerSucceeded = true;
-      console.info(`[chat] request_id=${requestId} event=provider_succeeded provider=${provider.name} duration_ms=${Date.now() - providerStartedAt} response_chars=${providerText.length}`);
-      break;
-    } catch (error) {
+      return providerText;
+    },
+    (provider, error) => {
       const status = Number.isInteger(error?.status) ? error.status : "unknown";
       const code = typeof error?.code === "string" && /^[A-Z0-9_-]{1,40}$/i.test(error.code)
         ? error.code
         : "PROVIDER_ERROR";
       console.error(`[chat] request_id=${requestId} event=provider_failed provider=${provider.name} status=${status} code=${code} duration_ms=${Date.now() - providerStartedAt}`);
-      if (res.destroyed || clientDisconnected) return;
-    }
+      const cooldown = providerCooldownMs(error);
+      if (cooldown > 0) {
+        providerCooldowns.set(provider.name, Date.now() + cooldown);
+        console.warn(`[chat] request_id=${requestId} event=provider_cooldown provider=${provider.name} duration_ms=${cooldown}`);
+      }
+    },
+    () => clientDisconnected || res.destroyed
+  );
+
+  if (clientDisconnected || res.destroyed) return;
+  if (providerResult) {
+    responseText = providerResult.text;
+    providerSucceeded = true;
+    providerCooldowns.delete(providerResult.provider.name);
+    console.info(`[chat] request_id=${requestId} event=provider_succeeded provider=${providerResult.provider.name} duration_ms=${Date.now() - providerStartedAt} response_chars=${responseText.length}`);
   }
 
   if (!providerSucceeded) {
