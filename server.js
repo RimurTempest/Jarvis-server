@@ -65,30 +65,53 @@ const pool = process.env.DATABASE_URL
   : null;
 
 const providers = [];
+const providerCooldowns = new Map();
+const MAX_AI_PROVIDERS = 10;
 
-if (process.env.GROQ_API_KEY) {
-  providers.push({
-    name: "Groq",
-    model: GROQ_MODEL,
-    client: new OpenAI({
-      apiKey: process.env.GROQ_API_KEY,
-      baseURL: "https://api.groq.com/openai/v1",
-      timeout: 45000,
-      maxRetries: 0,
-    }),
-  });
+function registerProvider({ name, apiKey, model, baseURL = null }) {
+  if (providers.length >= MAX_AI_PROVIDERS || !apiKey || !model) return;
+  const safeName = String(name || `Provider-${providers.length + 1}`)
+    .replace(/[^a-zA-Z0-9 _.-]/g, "")
+    .trim()
+    .slice(0, 40) || `Provider-${providers.length + 1}`;
+  if (providers.some((provider) => provider.name.toLowerCase() === safeName.toLowerCase())) return;
+  const clientOptions = { apiKey, timeout: 45000, maxRetries: 0 };
+  if (baseURL) {
+    try {
+      const parsed = new URL(baseURL);
+      if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname))) {
+        console.warn(`Provedor ignorado por URL insegura: ${safeName}`);
+        return;
+      }
+      clientOptions.baseURL = parsed.toString().replace(/\/$/, "");
+    } catch {
+      console.warn(`Provedor ignorado por URL inválida: ${safeName}`);
+      return;
+    }
+  }
+  providers.push({ name: safeName, model, client: new OpenAI(clientOptions) });
 }
 
-if (process.env.OPENAI_API_KEY) {
-  providers.push({
-    name: "OpenAI",
-    model: OPENAI_MODEL,
-    client: new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      timeout: 45000,
-      maxRetries: 0,
-    }),
-  });
+registerProvider({ name: "Groq", apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL, baseURL: "https://api.groq.com/openai/v1" });
+registerProvider({ name: "OpenAI", apiKey: process.env.OPENAI_API_KEY, model: OPENAI_MODEL });
+
+// Additional OpenAI-compatible providers: JARVIS_PROVIDER_1_NAME/API_KEY/BASE_URL/MODEL.
+// The total, including Groq/OpenAI, is capped at ten.
+for (let index = 1; index <= MAX_AI_PROVIDERS; index += 1) {
+  const prefix = `JARVIS_PROVIDER_${index}_`;
+  const apiKey = process.env[`${prefix}API_KEY`];
+  const baseURL = process.env[`${prefix}BASE_URL`];
+  const model = process.env[`${prefix}MODEL`];
+  if (!apiKey || !baseURL || !model) continue;
+  registerProvider({ name: process.env[`${prefix}NAME`] || `Provider-${index}`, apiKey, baseURL, model });
+}
+
+function providerCooldownMs(error) {
+  const status = Number.isInteger(error?.status) ? error.status : 0;
+  if (status === 401 || status === 403) return 15 * 60 * 1000;
+  if (status === 429) return 60 * 1000;
+  if (status >= 500 || error?.code === "ETIMEDOUT" || error?.code === "ECONNRESET") return 20 * 1000;
+  return 0;
 }
 
 let databaseInitialization = null;
@@ -971,7 +994,11 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     }
   });
 
-  for (const provider of providers) {
+  const now = Date.now();
+  const availableProviders = providers.filter((provider) => (providerCooldowns.get(provider.name) ?? 0) <= now);
+  const providerOrder = availableProviders.length ? availableProviders : providers;
+
+  for (const provider of providerOrder) {
     if (clientDisconnected) return;
     const providerStartedAt = Date.now();
     try {
@@ -992,6 +1019,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
       // não contamina a resposta nem impede uma tentativa limpa no próximo provedor.
       responseText = providerText;
       providerSucceeded = true;
+      providerCooldowns.delete(provider.name);
       console.info(`[chat] request_id=${requestId} event=provider_succeeded provider=${provider.name} duration_ms=${Date.now() - providerStartedAt} response_chars=${providerText.length}`);
       break;
     } catch (error) {
@@ -1000,6 +1028,11 @@ app.post("/api/chat", requireAuth, async (req, res) => {
         ? error.code
         : "PROVIDER_ERROR";
       console.error(`[chat] request_id=${requestId} event=provider_failed provider=${provider.name} status=${status} code=${code} duration_ms=${Date.now() - providerStartedAt}`);
+      const cooldown = providerCooldownMs(error);
+      if (cooldown > 0) {
+        providerCooldowns.set(provider.name, Date.now() + cooldown);
+        console.warn(`[chat] request_id=${requestId} event=provider_cooldown provider=${provider.name} duration_ms=${cooldown}`);
+      }
       if (res.destroyed || clientDisconnected) return;
     }
   }
