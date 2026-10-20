@@ -47,6 +47,8 @@ jobs:
       - name: Check capability module syntax
         run: |
           node --check jarvis-capabilities/capability-prompt-context.mjs
+          node --check jarvis-capabilities/universal-task-store.mjs
+          node --check jarvis-capabilities/test/universal-task-store.test.mjs
           node --check jarvis-capabilities/secret-scanner.mjs
           node --check jarvis-capabilities/test/secret-scanner.test.mjs
           node --check jarvis-capabilities/self-improvement-proposal-policy.mjs
@@ -98,6 +100,7 @@ jobs:
       - name: Run capability tests
         run: |
           node --test jarvis-capabilities/test/capability-prompt-context.test.mjs
+          node --test jarvis-capabilities/test/universal-task-store.test.mjs
           node --test jarvis-capabilities/test/secret-scanner.test.mjs
           node --test jarvis-capabilities/test/self-improvement-proposal-policy.test.mjs
           node --test jarvis-capabilities/test/self-improvement-github-context.test.mjs
