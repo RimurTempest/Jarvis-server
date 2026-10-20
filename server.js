@@ -1573,7 +1573,9 @@ app.post("/api/chat", requireAuth, async (req, res) => {
       const reusableCapability = capabilityCanBeReused(activeCapability);
       capabilityContext = buildCapabilityPromptContext(activeCapability, {
         reusable: reusableCapability,
-      }) + "\\n\\nPROTOCOLO UNIVERSAL DE EXECUÇÃO: trate o pedido como tarefa, não como pedido de tutorial. Pesquise, prepare e valide a capacidade necessária; execute apenas por adaptador autorizado e verifique o resultado. Se não houver executor, permissão ou destino confirmado, informe o bloqueio sem alegar conclusão.";
+      }) + "
+
+PROTOCOLO UNIVERSAL DE EXECUÇÃO: trate o pedido como tarefa, não como pedido de tutorial. Pesquise, prepare e valide a capacidade necessária; execute apenas por adaptador autorizado e verifique o resultado. Se não houver executor, permissão ou destino confirmado, informe o bloqueio sem alegar conclusão.";
     } catch (error) {
       console.error("Falha ao registrar intenção de aprendizado de capacidade:", error.message);
       capabilityContext = "\n\nO usuário pediu para aprender uma capacidade, mas o registro persistente falhou. Não afirme que a solicitação foi salva nem que a capacidade foi aprendida.";
@@ -1646,15 +1648,21 @@ app.post("/api/chat", requireAuth, async (req, res) => {
               );
               if (existingRun.rows[0]?.id) queuedSelfImprovementRun = { id: existingRun.rows[0].id };
             } catch {}
-            capabilityContext += "\\n\\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade; não será criada outra.";
+            capabilityContext += "
+
+PIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade; não será criada outra.";
           } else {
             console.error("Falha ao enfileirar solicitação de capacidade:", error?.name || "Error");
-            capabilityContext += "\\n\\nPIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Não prometa alteração de código.";
+            capabilityContext += "
+
+PIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Não prometa alteração de código.";
           }
         }
       }
     } else {
-      capabilityContext += "\\n\\nPIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: falta configuração segura de geração/publicação. Não prometa gerar ou publicar uma atualização.";
+      capabilityContext += "
+
+PIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: falta configuração segura de geração/publicação. Não prometa gerar ou publicar uma atualização.";
     }
   }
   if (universalTaskId) {
