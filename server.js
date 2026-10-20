@@ -104,7 +104,10 @@ for (let index = 1; index <= MAX_AI_PROVIDERS; index += 1) {
   registerProvider({ name: process.env[`${prefix}NAME`] || `Provider-${index}`, apiKey, baseURL, model });
 }
 registerProvider({ name: "Groq", apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL, baseURL: "https://api.groq.com/openai/v1" });
-registerProvider({ name: "OpenAI", apiKey: process.env.OPENAI_API_KEY, model: OPENAI_MODEL });
+// Paid OpenAI API usage is opt-in; keep it disabled by default for a free-only setup.
+if (process.env.JARVIS_ALLOW_PAID_OPENAI === "true") {
+  registerProvider({ name: "OpenAI", apiKey: process.env.OPENAI_API_KEY, model: OPENAI_MODEL });
+}
 
 let databaseInitialization = null;
 let databaseInitialized = false;
