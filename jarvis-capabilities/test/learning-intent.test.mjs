@@ -15,6 +15,13 @@ test("detects requests with a leading assistant name and different verbs", () =>
   assert.equal(detectCapabilityLearningRequest("Aprenda como usar um recurso do sistema").goal, "um recurso do sistema");
 });
 
+test("detects direct capability requests phrased as becoming able to do something", () => {
+  assert.equal(detectCapabilityLearningRequest("Quero que você consiga enviar e-mails.").goal, "enviar e-mails");
+  assert.equal(detectCapabilityLearningRequest("Quero que você possa realizar chamadas.").goal, "realizar chamadas");
+  assert.equal(detectCapabilityLearningRequest("Preciso que você seja capaz de integrar uma API."), null);
+  assert.equal(detectCapabilityLearningRequest("I want you to be able to send emails.").goal, "send emails");
+});
+
 test("detects English requests without task-specific shortcuts", () => {
   assert.equal(detectCapabilityLearningRequest("Learn how to organize files.").goal, "organize files");
 });
