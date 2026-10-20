@@ -51,7 +51,7 @@ export async function transitionUniversalTaskRecord(pool, { id, state, summary =
   if (runId !== null && (typeof runId !== "string" || !UUID.test(runId))) throw new TypeError("runId inválido.");
   for (const [field, value] of [["summary", summary], ["blocker", blocker]]) {
     if (value !== null && (typeof value !== "string" || value.length > 1000)) throw new TypeError(field + " inválido.");
-    if (typeof value === "string" && /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|credential|authorization|password|senha|secret)\\s*[:=]\\s*[^\\s,;]+|\\bBearer\\s+[a-z0-9._-]{12,}/i.test(value)) {
+    if (typeof value === "string" && /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|credential|authorization|password|senha|secret)\s*[:=]\s*[^\s,;]+|\bBearer\s+[a-z0-9._-]{12,}/i.test(value)) {
       throw new TypeError(field + " parece conter credenciais.");
     }
   }
