@@ -14,6 +14,7 @@ export function getSelfImprovementReadiness({
   databaseInitialized = false,
   providerCount = 0,
   workerRunning = false,
+  autoMergeConfigured = false,
 } = {}) {
   const checks = {
     featureEnabled: env.JARVIS_SELF_IMPROVEMENT_ENABLED === "true",
@@ -53,6 +54,7 @@ export function getSelfImprovementReadiness({
       autoMergeOptIn: env.JARVIS_SELF_IMPROVEMENT_AUTO_MERGE === "true" &&
         typeof env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN === "string" &&
         env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN.trim().length >= 20,
+      autoMergeConfigured: autoMergeConfigured === true,
       note: "Auto-merge readiness also depends on target, branch, CI, and runtime-health checks for each run.",
       githubTokenPermissionsVerified: false,
       noteOnCredentials: "Presence and format are checked; actual GitHub permissions and token validity are not tested by this diagnostic.",
