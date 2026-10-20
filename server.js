@@ -1224,15 +1224,33 @@ app.get("/api/self-improvement/status", requireAuth, async (_req, res) => {
     workerRunning: Boolean(selfImprovementWorker?.isRunning?.()),
     autoMergeConfigured,
   });
-  const githubAccess = await inspectSelfImprovementGitHubAccess({
-    token: process.env.JARVIS_GITHUB_TOKEN,
-    repository: process.env.JARVIS_GITHUB_REPOSITORY,
-  });
-  const githubReadinessVerified = githubAccess.repositoryReadable &&
-    githubAccess.accountCanPush &&
-    githubAccess.pullRequestsReadable &&
-    githubAccess.workflowRunsReadable;
-  if (readiness.ready && !githubReadinessVerified) {
+  const [serverGitHubAccess, androidGitHubAccess, fullStackGitHubAccess] = await Promise.all([
+    inspectSelfImprovementGitHubAccess({
+      token: process.env.JARVIS_GITHUB_TOKEN,
+      repository: process.env.JARVIS_GITHUB_REPOSITORY,
+    }),
+    inspectSelfImprovementGitHubAccess({
+      token: process.env.JARVIS_GITHUB_TOKEN,
+      repository: process.env.JARVIS_ANDROID_REPOSITORY,
+    }),
+    inspectSelfImprovementGitHubAccess({
+      token: process.env.JARVIS_GITHUB_TOKEN,
+      repository: process.env.JARVIS_FULL_STACK_REPOSITORY,
+    }),
+  ]);
+  const githubAccess = {
+    server: serverGitHubAccess,
+    android: androidGitHubAccess,
+    fullStack: fullStackGitHubAccess,
+  };
+  const hasAccessibleConfiguredTarget = Object.entries(githubAccess).some(([target, access]) =>
+    readiness.targetConfiguration[target]?.configured &&
+    access.repositoryReadable &&
+    access.accountCanPush &&
+    access.pullRequestsReadable &&
+    access.workflowRunsReadable
+  );
+  if (readiness.ready && !hasAccessibleConfiguredTarget) {
     readiness.ready = false;
     if (!readiness.missingRequirements.includes("githubRepositoryAccess")) {
       readiness.missingRequirements.push("githubRepositoryAccess");
