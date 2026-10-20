@@ -274,3 +274,56 @@ test("self-improvement notifications return safe status metadata and require aut
   const unauthorized = await fetch(`${baseUrl}/api/self-improvement/notifications`);
   assert.equal(unauthorized.status, 401);
 });
+
+test("self-improvement readiness endpoint is authenticated and reports missing configuration without secrets", { skip: !databaseUrl }, async (t) => {
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const apiToken = "test-jarvis-readiness-token";
+  const githubToken = "github-secret-test-token-1234567890";
+  const exaKey = "exa-secret-test-key";
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DATABASE_URL: databaseUrl,
+      JARVIS_API_TOKEN: apiToken,
+      GROQ_API_KEY: "test-provider-key",
+      OPENAI_API_KEY: "",
+      EXA_API_KEY: exaKey,
+      JARVIS_GITHUB_TOKEN: githubToken,
+      JARVIS_SELF_IMPROVEMENT_ENABLED: "false",
+      JARVIS_GITHUB_REPOSITORY: "",
+      JARVIS_ANDROID_REPOSITORY: "",
+      JARVIS_FULL_STACK_REPOSITORY: "",
+    },
+    stdio: "ignore",
+  });
+
+  t.after(async () => {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) return resolve();
+      const timeout = setTimeout(resolve, 3000);
+      child.once("exit", () => { clearTimeout(timeout); resolve(); });
+    });
+  });
+
+  await waitForServer(baseUrl, child);
+  const unauthorized = await fetch(`${baseUrl}/api/self-improvement/status`);
+  assert.equal(unauthorized.status, 401);
+
+  const response = await fetch(`${baseUrl}/api/self-improvement/status`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const body = await response.json();
+  assert.equal(body.selfImprovement.ready, false);
+  assert.equal(body.selfImprovement.checks.featureEnabled, false);
+  assert.ok(body.selfImprovement.missingRequirements.includes("targetRepository"));
+  const serialized = JSON.stringify(body);
+  assert.equal(serialized.includes(githubToken), false);
+  assert.equal(serialized.includes(exaKey), false);
+});
+
