@@ -36,3 +36,36 @@ test("fails closed on malformed, oversized, or unsafe classifier output", () => 
   assert.equal(parseCapabilityIntentClassification('{"shouldResearch":true,"goal":"send to someone@example.com"}'), null);
   assert.equal(parseCapabilityIntentClassification('{"shouldResearch":true,"goal":"use api_key=secret123"}'), null);
 });
+
+test("recognizes broader natural-language capability requests without learn/research keywords", () => {
+  const requests = [
+    "Quero que você encontre informações oficiais sobre esse serviço.",
+    "Preciso que você pesquise opções para automatizar meus relatórios.",
+    "Pode verificar se existe uma forma de sincronizar meus arquivos?",
+    "Gostaria que você analisasse esses dados e preparasse um resumo.",
+    "Me ajuda a descobrir como agendar compromissos automaticamente?",
+    "Você consegue monitorar quando sair uma nova versão?",
+    "Por favor, identifique uma maneira segura de digitalizar esses documentos.",
+    "I need you to find and compare free ways to automate this workflow.",
+    "Could you monitor the release and notify me when it is available?",
+  ];
+
+  for (const request of requests) {
+    assert.equal(shouldClassifyCapabilityIntent(request), true, request);
+  }
+});
+
+test("keeps broad informational and learning questions out of capability execution", () => {
+  const questions = [
+    "Como posso pesquisar opções para automatizar meus relatórios?",
+    "Me explique como funciona o monitoramento de versões.",
+    "Quero aprender a analisar esses dados.",
+    "What is the best way to monitor software releases?",
+    "Teach me how to compare these services.",
+    "Recebi um relatório e pesquisei sobre o assunto ontem.",
+  ];
+
+  for (const question of questions) {
+    assert.equal(shouldClassifyCapabilityIntent(question), false, question);
+  }
+});
