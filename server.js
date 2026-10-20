@@ -1209,7 +1209,7 @@ app.get("/api/self-improvement/status", requireAuth, async (_req, res) => {
     databaseAvailable,
     databaseInitialized,
     providerCount: providers.length,
-    workerRunning: Boolean(selfImprovementWorker),
+    workerRunning: Boolean(selfImprovementWorker?.isRunning?.()),
   });
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
