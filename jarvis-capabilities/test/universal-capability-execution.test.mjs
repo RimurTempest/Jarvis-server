@@ -75,5 +75,7 @@ test("high-risk tasks require a security review", () => {
 
 test("rejects invalid task plans and secret-bearing goals", () => {
   assert.throws(() => createUniversalTaskRequest({ id: "task-1", originalRequest: "password=abcd1234567890", goal: "do thing" }), /credenciais/);
+  assert.throws(() => createUniversalTaskRequest({ id: "task-2", originalRequest: "token=abc123", goal: "do thing" }), /credenciais/);
+  assert.throws(() => createUniversalTaskRequest({ id: "task-3", originalRequest: "Bearer abcdefghijklmnop", goal: "do thing" }), /credenciais/);
   assert.throws(() => createUniversalTaskPlan({ goal: "x", target: "unsupported_target", riskLevel: "low", requiredPermissions: [], steps: [], acceptanceCriteria: [], rollbackPlan: "none" }));
 });
