@@ -37,7 +37,7 @@ test("does not claim success without HTTPS evidence and independent verification
 test("rejects malformed, non-HTTPS, and credential-bearing evidence URLs", async () => {
   for (const evidence of ["https://", "http://provider.example/message/1", "https://user:password@provider.example/message/1", "not-a-url"]) {
     const registry = new Map([["email.send", {
-    target: "external_service",
+      target: "external_service",
       execute: async () => ({ status: "succeeded", summary: "Concluído", evidence }),
       verify: async () => ({ status: "succeeded", summary: "Verificado", evidence: "https://provider.example/message/1" }),
     }]]);
