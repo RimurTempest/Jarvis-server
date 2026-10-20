@@ -363,28 +363,32 @@ async function processSelfImprovementRun(run) {
             testing: "Validando a proposta de código; isso ainda não comprova a execução da tarefa original.",
           };
           if (targetState) {
-            const linkedTasks = await pool.query(
-              "SELECT id, state FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
-              [run.id],
-            );
-            for (const task of linkedTasks.rows) {
-              const currentIndex = stateOrder.indexOf(task.state);
-              const targetIndex = stateOrder.indexOf(targetState);
-              if (currentIndex < 0 || targetIndex < currentIndex) continue;
-              for (let index = currentIndex + 1; index <= targetIndex; index += 1) {
-                await transitionUniversalTaskRecord(pool, {
-                  id: task.id,
-                  state: stateOrder[index],
-                  summary: taskSummaries[stateOrder[index]],
-                });
+            try {
+              const linkedTasks = await pool.query(
+                "SELECT id, state FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
+                [run.id],
+              );
+              for (const task of linkedTasks.rows) {
+                const currentIndex = stateOrder.indexOf(task.state);
+                const targetIndex = stateOrder.indexOf(targetState);
+                if (currentIndex < 0 || targetIndex < currentIndex) continue;
+                for (let index = currentIndex + 1; index <= targetIndex; index += 1) {
+                  await transitionUniversalTaskRecord(pool, {
+                    id: task.id,
+                    state: stateOrder[index],
+                    summary: taskSummaries[stateOrder[index]],
+                  });
+                }
+                if (currentIndex === targetIndex) {
+                  await transitionUniversalTaskRecord(pool, {
+                    id: task.id,
+                    state: targetState,
+                    summary: taskSummaries[targetState],
+                  });
+                }
               }
-              if (currentIndex === targetIndex) {
-                await transitionUniversalTaskRecord(pool, {
-                  id: task.id,
-                  state: targetState,
-                  summary: taskSummaries[targetState],
-                });
-              }
+            } catch (taskError) {
+              console.error("Falha ao atualizar progresso visual da tarefa:", taskError?.name || "Error");
             }
           }
         },
