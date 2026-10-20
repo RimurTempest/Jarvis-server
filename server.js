@@ -687,23 +687,16 @@ app.get("/", (_req, res) => {
 
 app.get("/health", async (_req, res) => {
   let database = "disconnected";
-  let learningMemoryReady = false;
-
   try {
     if (pool) {
       await pool.query("SELECT 1");
       database = "connected";
-
-      // Readiness checks must initialize the same persistent schema used by
-      // chat and learning routes, rather than reporting a false negative on
-      // a cold instance before the first authenticated request.
-      await initializeDatabase();
-      learningMemoryReady = databaseInitialized;
     }
   } catch (error) {
-    console.error("Falha na verificação de prontidão do PostgreSQL:", safeDatabaseError(error));
+    console.error("Falha no teste de conexão PostgreSQL:", safeDatabaseError(error));
   }
 
+  const learningMemoryReady = database === "connected" && databaseInitialized;
   const healthy = database === "connected" && learningMemoryReady && providers.length > 0;
   res.status(healthy ? 200 : 503).json({
     status: healthy ? "ok" : "degraded",
@@ -1051,6 +1044,12 @@ app.use((error, _req, res, _next) => {
   if (error instanceof SyntaxError && "body" in error) return res.status(400).json({ error: "JSON inválido." });
   console.error("Erro inesperado:", error?.message || "desconhecido");
   return res.status(500).json({ error: "Erro interno do servidor." });
+});
+
+// Inicializa o schema persistente no cold start, sem depender da primeira
+// mensagem do usuário ou de uma chamada pública ao endpoint de saúde.
+void initializeDatabase().catch((error) => {
+  console.error("Falha ao inicializar banco de dados na inicialização:", safeDatabaseError(error));
 });
 
 const server = app.listen(PORT, "0.0.0.0", () => {
