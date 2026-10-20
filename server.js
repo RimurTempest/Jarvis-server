@@ -1573,9 +1573,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
       const reusableCapability = capabilityCanBeReused(activeCapability);
       capabilityContext = buildCapabilityPromptContext(activeCapability, {
         reusable: reusableCapability,
-      }) + "
-
-PROTOCOLO UNIVERSAL DE EXECUÇÃO: trate o pedido como tarefa, não como pedido de tutorial. Pesquise, prepare e valide a capacidade necessária; execute apenas por adaptador autorizado e verifique o resultado. Se não houver executor, permissão ou destino confirmado, informe o bloqueio sem alegar conclusão.";
+      }) + "\n\nPROTOCOLO UNIVERSAL DE EXECUÇÃO: trate o pedido como tarefa, não como pedido de tutorial. Pesquise, prepare e valide a capacidade necessária; execute apenas por adaptador autorizado e verifique o resultado. Se não houver executor, permissão ou destino confirmado, informe o bloqueio sem alegar conclusão.";
     } catch (error) {
       console.error("Falha ao registrar intenção de aprendizado de capacidade:", error.message);
       capabilityContext = "\n\nO usuário pediu para aprender uma capacidade, mas o registro persistente falhou. Não afirme que a solicitação foi salva nem que a capacidade foi aprendida.";
