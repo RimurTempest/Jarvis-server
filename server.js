@@ -1214,6 +1214,8 @@ app.get("/api/capabilities/:id/proposals/:runId/validation", requireAuth, async 
 });
 
 app.get("/api/tasks/:id", requireAuth, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
   const id = typeof req.params.id === "string" ? req.params.id : "";
   try {
     await initializeDatabase();
