@@ -792,6 +792,40 @@ function selfImprovementPipelineEnabled() {
     typeof token === "string" && token.trim().length >= 20;
 }
 
+async function logSafeGitHubAccessDiagnostics() {
+  const configuredTargets = [
+    ["server", process.env.JARVIS_GITHUB_REPOSITORY],
+    ["android", process.env.JARVIS_ANDROID_REPOSITORY],
+    ["fullStack", process.env.JARVIS_FULL_STACK_REPOSITORY],
+  ].filter(([, repository]) => typeof repository === "string" && repository.trim());
+
+  if (!configuredTargets.length) {
+    console.info("JARVIS GitHub access diagnostic:", JSON.stringify({ status: "no_targets_configured" }));
+    return;
+  }
+
+  const results = await Promise.all(configuredTargets.map(async ([target, repository]) => {
+    const access = await inspectSelfImprovementGitHubAccess({
+      token: process.env.JARVIS_GITHUB_TOKEN,
+      repository,
+    });
+    return [target, {
+      checked: access.checked,
+      repositoryReadable: access.repositoryReadable,
+      accountCanPush: access.accountCanPush,
+      pullRequestsReadable: access.pullRequestsReadable,
+      workflowRunsReadable: access.workflowRunsReadable,
+      status: access.status,
+      httpStatus: access.httpStatus ?? null,
+      writePermissionsVerified: false,
+    }];
+  }));
+
+  // This log intentionally contains only boolean checks and HTTP status codes.
+  // Never log repository credentials, response bodies, headers, or secret values.
+  console.info("JARVIS GitHub access diagnostic:", JSON.stringify(Object.fromEntries(results)));
+}
+
 async function processSelfImprovementRun(run) {
   const selected = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [run.capability_id]);
   if (!selected.rowCount) {
@@ -1907,6 +1941,9 @@ let selfImprovementWorker = null;
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`JARVIS online na porta ${PORT}`);
+});
+void logSafeGitHubAccessDiagnostics().catch(() => {
+  console.warn("JARVIS GitHub access diagnostic indisponível; nenhum dado de credencial foi registrado.");
 });
 if (selfImprovementPipelineEnabled()) {
   void initializeDatabase().then(() => {
