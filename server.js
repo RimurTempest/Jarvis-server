@@ -23,6 +23,7 @@ import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarv
 import { initializeUniversalTaskStore, createUniversalTaskRecord, transitionUniversalTaskRecord, getUniversalTaskRecord } from "./jarvis-capabilities/universal-task-store.mjs";
 import { getSelfImprovementReadiness } from "./jarvis-capabilities/self-improvement-readiness.mjs";
 import { shouldShowSources } from "./jarvis-capabilities/source-display-policy.mjs";
+import { inspectSelfImprovementGitHubAccess } from "./jarvis-capabilities/self-improvement-github-access.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -1223,11 +1224,26 @@ app.get("/api/self-improvement/status", requireAuth, async (_req, res) => {
     workerRunning: Boolean(selfImprovementWorker?.isRunning?.()),
     autoMergeConfigured,
   });
+  const githubAccess = await inspectSelfImprovementGitHubAccess({
+    token: process.env.JARVIS_GITHUB_TOKEN,
+    repository: process.env.JARVIS_GITHUB_REPOSITORY,
+  });
+  const githubReadinessVerified = githubAccess.repositoryReadable &&
+    githubAccess.accountCanPush &&
+    githubAccess.pullRequestsReadable &&
+    githubAccess.workflowRunsReadable;
+  if (readiness.ready && !githubReadinessVerified) {
+    readiness.ready = false;
+    if (!readiness.missingRequirements.includes("githubRepositoryAccess")) {
+      readiness.missingRequirements.push("githubRepositoryAccess");
+    }
+  }
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
   return res.status(readiness.ready ? 200 : 503).json({
     service: "JARVIS",
     selfImprovement: readiness,
+    githubAccess,
   });
 });
 
