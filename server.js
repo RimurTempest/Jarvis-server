@@ -694,16 +694,17 @@ app.get("/health", async (_req, res) => {
     }
   } catch (error) {
     console.error("Falha no teste de conexão PostgreSQL:", safeDatabaseError(error));
-    database = "disconnected";
   }
-  const healthy = database === "connected" && providers.length > 0;
+
+  const learningMemoryReady = database === "connected" && databaseInitialized;
+  const healthy = database === "connected" && learningMemoryReady && providers.length > 0;
   res.status(healthy ? 200 : 503).json({
     status: healthy ? "ok" : "degraded",
     service: "JARVIS",
     database,
     aiProviders: providers.length,
     webSearchConfigured: Boolean(process.env.EXA_API_KEY),
-    persistentLearningMemory: database === "connected" && databaseInitialized,
+    persistentLearningMemory: learningMemoryReady,
   });
 });
 
@@ -1043,6 +1044,12 @@ app.use((error, _req, res, _next) => {
   if (error instanceof SyntaxError && "body" in error) return res.status(400).json({ error: "JSON inválido." });
   console.error("Erro inesperado:", error?.message || "desconhecido");
   return res.status(500).json({ error: "Erro interno do servidor." });
+});
+
+// Inicializa o schema persistente no cold start, sem depender da primeira
+// mensagem do usuário ou de uma chamada pública ao endpoint de saúde.
+void initializeDatabase().catch((error) => {
+  console.error("Falha ao inicializar banco de dados na inicialização:", safeDatabaseError(error));
 });
 
 const server = app.listen(PORT, "0.0.0.0", () => {
