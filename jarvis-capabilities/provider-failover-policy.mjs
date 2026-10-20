@@ -19,6 +19,35 @@ export function orderProvidersByCooldown(providers, cooldowns, now = Date.now())
   });
 }
 
+
+/**
+ * Calls providers strictly one at a time for a single user request.
+ * The next provider is not started until the current attempt has settled.
+ */
+export async function runProvidersSequentially(
+  providers,
+  attemptProvider,
+  onFailure = () => {},
+  shouldStop = () => false
+) {
+  for (const provider of providers) {
+    if (shouldStop()) return null;
+    try {
+      const text = await attemptProvider(provider);
+      if (typeof text !== "string" || !text.trim()) {
+        const emptyError = new Error("Resposta vazia do provedor.");
+        emptyError.code = "EMPTY_RESPONSE";
+        throw emptyError;
+      }
+      return { provider, text };
+    } catch (error) {
+      if (!shouldStop()) onFailure(provider, error);
+      if (shouldStop()) return null;
+    }
+  }
+  return null;
+}
+
 export function mergeHistoricalContext(olderContext, recentHistory) {
   const recentKeys = new Set(recentHistory.map((item) => `${item.role}: ${item.content}`));
   return [
