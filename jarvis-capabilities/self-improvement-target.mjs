@@ -7,9 +7,28 @@ function validRepository(value) {
 }
 
 function validBranch(value) {
-  return typeof value === "string" && value.length > 0 && value.length <= 100 &&
-    !value.startsWith("/") && !value.endsWith("/") && !value.includes("..") &&
-    !value.includes("\\") && /^[A-Za-z0-9._/-]+$/.test(value);
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > 100 ||
+    value === "@" ||
+    value.startsWith("/") ||
+    value.endsWith("/") ||
+    value.endsWith(".") ||
+    value.includes("//") ||
+    value.includes("..") ||
+    value.includes("@{") ||
+    value.includes("\\") ||
+    !/^[A-Za-z0-9._/-]+$/.test(value)
+  ) {
+    return false;
+  }
+
+  return value.split("/").every((segment) =>
+    segment.length > 0 &&
+    !segment.startsWith(".") &&
+    !segment.toLowerCase().endsWith(".lock")
+  );
 }
 
 /**

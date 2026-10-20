@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runSelfImprovementWorkerOnce } from "../self-improvement-worker.mjs";
+import { runSelfImprovementWorkerOnce, startSelfImprovementWorker } from "../self-improvement-worker.mjs";
 
 function fakePool({ run = null } = {}) {
   const calls = [];
@@ -51,4 +51,18 @@ test("routes processing failures to the failure handler without throwing", async
 test("validates worker dependencies", async () => {
   await assert.rejects(runSelfImprovementWorkerOnce({ pool: null, processRun: async () => {} }), /Pool PostgreSQL/i);
   await assert.rejects(runSelfImprovementWorkerOnce({ pool: { query: async () => ({ rows: [] }) } }), /processRun/i);
+});
+
+
+test("exposes worker running state and changes it after stop", () => {
+  const pool = fakePool();
+  const worker = startSelfImprovementWorker({
+    pool,
+    processRun: async () => {},
+    intervalMs: 1000,
+  });
+  assert.equal(worker.isRunning(), true);
+  assert.equal(typeof worker.isBusy(), "boolean");
+  worker.stop();
+  assert.equal(worker.isRunning(), false);
 });

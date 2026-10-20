@@ -286,3 +286,54 @@ test("persists verified runtime and rollback revisions for exact Android status 
     await pool.end();
   }
 });
+
+test("queue rejects Git-invalid branch names before touching the database", async () => {
+  const fakePool = { async query() { throw new Error("Should not query"); } };
+  const invalidBranches = [
+    "feature//broken",
+    "feature/./broken",
+    "feature/.hidden",
+    "feature/name.lock",
+    "feature/NAME.LOCK",
+    "feature/name.",
+    "feature/@{revision}",
+    "feature name",
+    "feature/~name",
+    "feature/[name]",
+    "@",
+  ];
+
+  for (const baseBranch of invalidBranches) {
+    await assert.rejects(
+      enqueueSelfImprovementRun(fakePool, {
+        id: "11111111-1111-4111-8111-111111111111",
+        capabilityId: "capability-1",
+        repository: "example/repo",
+        baseBranch,
+      }),
+      /baseBranch/i,
+      baseBranch,
+    );
+  }
+});
+
+test("queue accepts common safe branch names", async () => {
+  const fakePool = {
+    async query(sql) {
+      if (sql.includes("INSERT INTO jarvis_self_improvement_runs")) {
+        return { rows: [{ state: "queued" }] };
+      }
+      throw new Error("Unexpected query");
+    },
+  };
+
+  for (const baseBranch of ["main", "develop", "release/2026.10", "feature/secure-update_v2"]) {
+    const result = await enqueueSelfImprovementRun(fakePool, {
+      id: "11111111-1111-4111-8111-111111111111",
+      capabilityId: "capability-1",
+      repository: "example/repo",
+      baseBranch,
+    });
+    assert.equal(result.state, "queued", baseBranch);
+  }
+});

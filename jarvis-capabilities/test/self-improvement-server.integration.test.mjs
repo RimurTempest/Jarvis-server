@@ -274,3 +274,150 @@ test("self-improvement notifications return safe status metadata and require aut
   const unauthorized = await fetch(`${baseUrl}/api/self-improvement/notifications`);
   assert.equal(unauthorized.status, 401);
 });
+
+test("self-improvement readiness endpoint is authenticated and reports missing configuration without secrets", { skip: !databaseUrl }, async (t) => {
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const apiToken = "test-jarvis-readiness-token";
+  const githubToken = "github-secret-test-token-1234567890";
+  const exaKey = "exa-secret-test-key";
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DATABASE_URL: databaseUrl,
+      JARVIS_API_TOKEN: apiToken,
+      GROQ_API_KEY: "test-provider-key",
+      OPENAI_API_KEY: "",
+      EXA_API_KEY: exaKey,
+      JARVIS_GITHUB_TOKEN: githubToken,
+      JARVIS_SELF_IMPROVEMENT_ENABLED: "false",
+      JARVIS_GITHUB_REPOSITORY: "",
+      JARVIS_ANDROID_REPOSITORY: "",
+      JARVIS_FULL_STACK_REPOSITORY: "",
+    },
+    stdio: "ignore",
+  });
+
+  t.after(async () => {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) return resolve();
+      const timeout = setTimeout(resolve, 3000);
+      child.once("exit", () => { clearTimeout(timeout); resolve(); });
+    });
+  });
+
+  await waitForServer(baseUrl, child);
+  const unauthorized = await fetch(`${baseUrl}/api/self-improvement/status`);
+  assert.equal(unauthorized.status, 401);
+
+  const response = await fetch(`${baseUrl}/api/self-improvement/status`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const body = await response.json();
+  assert.equal(body.selfImprovement.ready, false);
+  assert.equal(body.selfImprovement.checks.featureEnabled, false);
+  assert.ok(body.selfImprovement.missingRequirements.includes("targetRepository"));
+  const serialized = JSON.stringify(body);
+  assert.equal(serialized.includes(githubToken), false);
+  assert.equal(serialized.includes(exaKey), false);
+});
+
+test("universal task status endpoint reports blocked work honestly and requires authentication", { skip: !databaseUrl }, async (t) => {
+  const port = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const apiToken = "test-jarvis-task-status-token";
+  const taskId = "44444444-4444-4444-8444-444444444444";
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DATABASE_URL: databaseUrl,
+      JARVIS_API_TOKEN: apiToken,
+      GROQ_API_KEY: "test-provider-key",
+      OPENAI_API_KEY: "",
+      EXA_API_KEY: "",
+      JARVIS_SELF_IMPROVEMENT_ENABLED: "false",
+      JARVIS_GITHUB_TOKEN: "",
+    },
+    stdio: "ignore",
+  });
+  let pool;
+  let capabilityId = null;
+  t.after(async () => {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) return resolve();
+      const timeout = setTimeout(resolve, 3000);
+      child.once("exit", () => { clearTimeout(timeout); resolve(); });
+    });
+    if (pool) {
+      await pool.query("DELETE FROM jarvis_universal_tasks WHERE id = $1", [taskId]).catch(() => {});
+      if (capabilityId) {
+        await pool.query("DELETE FROM jarvis_capabilities WHERE id = $1", [capabilityId]).catch(() => {});
+      }
+      await pool.end();
+    }
+  });
+
+  await waitForServer(baseUrl, child);
+  const headers = {
+    Authorization: `Bearer ${apiToken}`,
+    "Content-Type": "application/json",
+  };
+  const created = await fetch(`${baseUrl}/api/capabilities`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ goal: "Prepare a safe email integration proposal." }),
+  });
+  assert.equal(created.status, 201);
+  capabilityId = (await created.json()).capability.id;
+  pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  await pool.query("DELETE FROM jarvis_universal_tasks WHERE id = $1", [taskId]);
+  await pool.query(
+    `INSERT INTO jarvis_universal_tasks
+      (id, capability_id, original_request, goal, state, summary, blocker)
+     VALUES ($1, $2, $3, $4, 'blocked', $5, $6)`,
+    [
+      taskId,
+      capabilityId,
+      "Send an email",
+      "Prepare a safe email integration proposal",
+      "A tarefa foi registrada, mas nenhuma execução foi iniciada.",
+      "O pipeline de implementação não está habilitado.",
+    ],
+  );
+
+  const unauthorized = await fetch(`${baseUrl}/api/tasks/${taskId}`);
+  assert.equal(unauthorized.status, 401);
+
+  const response = await fetch(`${baseUrl}/api/tasks/${taskId}`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  const body = await response.json();
+  assert.equal(body.task.id, taskId);
+  assert.equal(body.task.state, "blocked");
+  assert.match(body.task.summary, /nenhuma execução foi iniciada/i);
+  assert.match(body.task.blocker, /não está habilitado/i);
+  assert.notEqual(body.task.state, "completed");
+  assert.equal(Object.hasOwn(body.task, "original_request"), false);
+  assert.equal(Object.hasOwn(body.task, "token"), false);
+
+  const missing = await fetch(`${baseUrl}/api/tasks/55555555-5555-4555-8555-555555555555`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  assert.equal(missing.status, 404);
+
+  const invalid = await fetch(`${baseUrl}/api/tasks/not-a-uuid`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  assert.equal(invalid.status, 400);
+});
