@@ -9,8 +9,14 @@ export function providerCooldownMs(error) {
 }
 
 export function orderProvidersByCooldown(providers, cooldowns, now = Date.now()) {
-  const available = providers.filter((provider) => (cooldowns.get(provider.name) ?? 0) <= now);
-  return available.length ? available : providers;
+  // Prefer healthy providers, but keep cooling providers as a final fallback.
+  // A transient outage in every currently healthy provider must not block a
+  // request when a cooling provider may already have recovered.
+  return [...providers].sort((left, right) => {
+    const leftCooling = (cooldowns.get(left.name) ?? 0) > now;
+    const rightCooling = (cooldowns.get(right.name) ?? 0) > now;
+    return Number(leftCooling) - Number(rightCooling);
+  });
 }
 
 export function mergeHistoricalContext(olderContext, recentHistory) {
