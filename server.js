@@ -1235,8 +1235,12 @@ app.get("/api/learning", requireAuth, async (_req, res) => {
 app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => {
   const rawLimit = req.query.limit;
   const limit = rawLimit === undefined ? 20 : Number(rawLimit);
+  const runId = typeof req.query.runId === "string" ? req.query.runId : null;
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
     return res.status(400).json({ error: "O limite deve ser um inteiro entre 1 e 50." });
+  }
+  if (req.query.runId !== undefined && (!runId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(runId))) {
+    return res.status(400).json({ error: "O identificador da execução é inválido." });
   }
   try {
     await initializeDatabase();
@@ -1251,10 +1255,11 @@ app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => 
               run.created_at AS "createdAt", run.updated_at AS "updatedAt"
        FROM jarvis_self_improvement_runs AS run
        LEFT JOIN jarvis_capabilities AS capability ON capability.id = run.capability_id
-       WHERE run.created_at >= NOW() - INTERVAL '30 days'
+       WHERE (($1::uuid IS NOT NULL AND run.id = $1::uuid)
+          OR ($1::uuid IS NULL AND run.created_at >= NOW() - INTERVAL '30 days'))
        ORDER BY run.updated_at DESC, run.created_at DESC
-       LIMIT $1`,
-      [limit],
+       LIMIT $2`,
+      [runId, limit],
     );
     return res.json({
       service: "JARVIS",
