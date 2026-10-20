@@ -7,7 +7,7 @@ export function detectCapabilityLearningRequest(message) {
   if (!raw || raw.length > 4000) return null;
 
   // Classify the opening request sentence only; later sentences often contain implementation details.
-  const candidate = raw.split(/(?<=[.!?])\\s+/u, 1)[0].trim();
+  const candidate = raw.split(/(?<=[.!?])\s+/u, 1)[0].trim();
 
   const patterns = [
     /^(?:jarvis[,! ]+)?aprenda\s+(?:a\s+)?(?:fazer|realizar|executar|usar|conseguir|como\s+fazer|como\s+realizar|como\s+usar)\s+(.+?)\s*[.!?]*$/i,
