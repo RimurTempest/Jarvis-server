@@ -1,4 +1,4 @@
-const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$/;
+const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/;
 
 function hasText(value) {
