@@ -347,6 +347,46 @@ async function processSelfImprovementRun(run) {
           // A execução só é concluída após os workflows verificarem o SHA exato do draft PR.
           if (stage === "draft_pr_created") return;
           await updateSelfImprovementRun(pool, run.id, stage);
+
+          const taskStateByStage = {
+            researching: "researching",
+            collecting_context: "planning",
+            generating: "implementing",
+            publishing: "testing",
+          };
+          const targetState = taskStateByStage[stage];
+          const stateOrder = ["researching", "planning", "implementing", "testing"];
+          const taskSummaries = {
+            researching: "Pesquisando documentação e requisitos; a tarefa original ainda não foi executada.",
+            planning: "Organizando o plano e os requisitos; a tarefa original ainda não foi executada.",
+            implementing: "Preparando uma proposta isolada de implementação; a tarefa original ainda não foi executada.",
+            testing: "Validando a proposta de código; isso ainda não comprova a execução da tarefa original.",
+          };
+          if (targetState) {
+            const linkedTasks = await pool.query(
+              "SELECT id, state FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
+              [run.id],
+            );
+            for (const task of linkedTasks.rows) {
+              const currentIndex = stateOrder.indexOf(task.state);
+              const targetIndex = stateOrder.indexOf(targetState);
+              if (currentIndex < 0 || targetIndex < currentIndex) continue;
+              for (let index = currentIndex + 1; index <= targetIndex; index += 1) {
+                await transitionUniversalTaskRecord(pool, {
+                  id: task.id,
+                  state: stateOrder[index],
+                  summary: taskSummaries[stateOrder[index]],
+                });
+              }
+              if (currentIndex === targetIndex) {
+                await transitionUniversalTaskRecord(pool, {
+                  id: task.id,
+                  state: targetState,
+                  summary: taskSummaries[targetState],
+                });
+              }
+            }
+          }
         },
       });
     },
@@ -537,10 +577,18 @@ async function processSelfImprovementRun(run) {
         : finalState === "merge_unverified"
           ? "O estado da alteração não pôde ser confirmado; a ação original não foi executada."
           : "A proposta foi processada; a ação original ainda precisa de autorização e execução verificável.";
-  await pool.query(
-    "UPDATE jarvis_universal_tasks SET state = 'awaiting_approval', summary = $2, blocker = NULL, updated_at = NOW() WHERE run_id = $1 AND state = 'researching'",
-    [run.id, taskSummary],
-  ).catch(() => {});
+  const tasksAwaitingReview = await pool.query(
+    "SELECT id, state FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
+    [run.id],
+  ).catch(() => ({ rows: [] }));
+  for (const task of tasksAwaitingReview.rows) {
+    await transitionUniversalTaskRecord(pool, {
+      id: task.id,
+      state: "awaiting_approval",
+      summary: taskSummary,
+      blocker: null,
+    }).catch(() => {});
+  }
 
   const terminalEvents = {
     runtime_verified: {
@@ -631,10 +679,18 @@ async function handleSelfImprovementRunFailure(run, error) {
   } catch {
     // Do not leak provider or repository response details through the worker.
   }
-  await pool.query(
-    "UPDATE jarvis_universal_tasks SET state = 'blocked', summary = $2, blocker = $3, updated_at = NOW() WHERE run_id = $1 AND state = 'researching'",
-    [run.id, "A preparação da capacidade não terminou; nenhuma execução da tarefa original foi confirmada.", "Pipeline de autoaperfeiçoamento interrompido."],
-  ).catch(() => {});
+  const tasksToBlock = await pool.query(
+    "SELECT id FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
+    [run.id],
+  ).catch(() => ({ rows: [] }));
+  for (const task of tasksToBlock.rows) {
+    await transitionUniversalTaskRecord(pool, {
+      id: task.id,
+      state: "blocked",
+      summary: "A preparação da capacidade não terminou; nenhuma execução da tarefa original foi confirmada.",
+      blocker: "Pipeline de autoaperfeiçoamento interrompido.",
+    }).catch(() => {});
+  }
   const errorName = typeof error?.name === "string" ? error.name.slice(0, 80) : "Error";
   console.error(`Execução de autoaperfeiçoamento interrompida (${errorName}); nenhuma implantação foi feita.`);
 }
