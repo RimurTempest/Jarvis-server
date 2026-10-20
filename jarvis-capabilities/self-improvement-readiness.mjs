@@ -6,14 +6,29 @@ function hasText(value) {
 }
 
 function isValidBranch(value) {
-  return typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= 100 &&
-    !value.startsWith("/") &&
-    !value.endsWith("/") &&
-    !value.includes("..") &&
-    !value.includes("\\") &&
-    BRANCH_PATTERN.test(value);
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > 100 ||
+    value === "@" ||
+    value.startsWith("/") ||
+    value.endsWith("/") ||
+    value.endsWith(".") ||
+    value.includes("//") ||
+    value.includes("..") ||
+    value.includes("@{") ||
+    value.includes("\\") ||
+    !BRANCH_PATTERN.test(value)
+  ) {
+    return false;
+  }
+
+  const segments = value.split("/");
+  return segments.every((segment) =>
+    segment.length > 0 &&
+    !segment.startsWith(".") &&
+    !segment.toLowerCase().endsWith(".lock")
+  );
 }
 /**
  * Reports only boolean readiness checks and missing setting names.
