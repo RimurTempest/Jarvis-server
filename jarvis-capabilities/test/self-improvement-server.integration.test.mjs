@@ -254,6 +254,19 @@ test("self-improvement notifications return safe status metadata and require aut
   assert.equal(Object.hasOwn(notification, "token"), false);
   assert.equal(Object.hasOwn(notification, "githubToken"), false);
 
+  const exactRun = await fetch(`${baseUrl}/api/self-improvement/notifications?runId=${runId}`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  assert.equal(exactRun.status, 200);
+  const exactBody = await exactRun.json();
+  assert.equal(exactBody.notifications.length, 1);
+  assert.equal(exactBody.notifications[0].id, runId);
+
+  const invalidRunId = await fetch(`${baseUrl}/api/self-improvement/notifications?runId=not-a-uuid`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  assert.equal(invalidRunId.status, 400);
+
   const invalidLimit = await fetch(`${baseUrl}/api/self-improvement/notifications?limit=999`, {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
