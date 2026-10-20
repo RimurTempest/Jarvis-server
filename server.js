@@ -1582,6 +1582,27 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     }
   }
 
+  if (universalTaskId) {
+    try {
+      const taskRecord = await getUniversalTaskRecord(pool, universalTaskId);
+      if (taskRecord) {
+        res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        sendEvent(res, "task_status", {
+          taskId: taskRecord.id,
+          state: taskRecord.state,
+          goal: taskRecord.goal,
+          summary: taskRecord.summary,
+          blocker: taskRecord.blocker,
+          runId: taskRecord.run_id,
+        });
+      }
+    } catch (taskError) {
+      console.error("Falha ao emitir estado da tarefa universal:", taskError?.name || "Error");
+    }
+  }
+
   // A tool call is only a proposal. The strict allowlist, target-device binding,
   // short expiry, and explicit confirmation in Android remain mandatory.
   let proposedAndroidAction = null;
