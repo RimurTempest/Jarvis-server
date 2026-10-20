@@ -21,6 +21,7 @@ import { runSelfImprovementCiRepairLoop } from "./jarvis-capabilities/self-impro
 import { mergeValidatedSelfImprovementDraft } from "./jarvis-capabilities/self-improvement-auto-activation.mjs";
 import { resolveRuntimeHealthUrl, verifyRuntimeRevision, revertMergedCommitSafely, isSelfImprovementAutoMergeConfigured } from "./jarvis-capabilities/self-improvement-runtime-guard.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
+import { initializeUniversalTaskStore, createUniversalTaskRecord, transitionUniversalTaskRecord, getUniversalTaskRecord } from "./jarvis-capabilities/universal-task-store.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -346,6 +347,61 @@ async function processSelfImprovementRun(run) {
           // A execução só é concluída após os workflows verificarem o SHA exato do draft PR.
           if (stage === "draft_pr_created") return;
           await updateSelfImprovementRun(pool, run.id, stage);
+
+          const taskStateByStage = {
+            researching: "researching",
+            collecting_context: "planning",
+            generating: "implementing",
+            publishing: "testing",
+          };
+          const targetState = taskStateByStage[stage];
+          const stateOrder = ["researching", "planning", "implementing", "testing"];
+          const taskSummaries = {
+            researching: "Pesquisando documentação e requisitos; a tarefa original ainda não foi executada.",
+            planning: "Organizando o plano e os requisitos; a tarefa original ainda não foi executada.",
+            implementing: "Preparando uma proposta isolada de implementação; a tarefa original ainda não foi executada.",
+            testing: "Validando a proposta de código; isso ainda não comprova a execução da tarefa original.",
+          };
+          if (targetState) {
+            try {
+              const linkedTasks = await pool.query(
+                "SELECT id, state FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
+                [run.id],
+              );
+              for (const task of linkedTasks.rows) {
+                const currentIndex = stateOrder.indexOf(task.state);
+                const targetIndex = stateOrder.indexOf(targetState);
+                if (currentIndex < 0) continue;
+                if (targetIndex < currentIndex) {
+                  // Uma tentativa de reparo pode voltar de testes para implementação.
+                  if (task.state === "testing" && targetState === "implementing") {
+                    await transitionUniversalTaskRecord(pool, {
+                      id: task.id,
+                      state: "implementing",
+                      summary: taskSummaries.implementing,
+                    });
+                  }
+                  continue;
+                }
+                for (let index = currentIndex + 1; index <= targetIndex; index += 1) {
+                  await transitionUniversalTaskRecord(pool, {
+                    id: task.id,
+                    state: stateOrder[index],
+                    summary: taskSummaries[stateOrder[index]],
+                  });
+                }
+                if (currentIndex === targetIndex) {
+                  await transitionUniversalTaskRecord(pool, {
+                    id: task.id,
+                    state: targetState,
+                    summary: taskSummaries[targetState],
+                  });
+                }
+              }
+            } catch (taskError) {
+              console.error("Falha ao atualizar progresso visual da tarefa:", taskError?.name || "Error");
+            }
+          }
         },
       });
     },
@@ -527,6 +583,28 @@ async function processSelfImprovementRun(run) {
     await updateSelfImprovementRun(pool, run.id, "draft_pr_created", persistedRunMetadata);
   }
 
+  const taskSummary = finalState === "draft_pr_created"
+    ? "A proposta de implementação foi criada e aguarda revisão; a tarefa solicitada ainda não foi executada."
+    : finalState === "runtime_verified"
+      ? "A revisão de código foi implantada e verificada; a ação original ainda não foi executada."
+      : finalState === "rolled_back"
+        ? "A proposta não permaneceu ativa após a verificação; a ação original não foi executada."
+        : finalState === "merge_unverified"
+          ? "O estado da alteração não pôde ser confirmado; a ação original não foi executada."
+          : "A proposta foi processada; a ação original ainda precisa de autorização e execução verificável.";
+  const tasksAwaitingReview = await pool.query(
+    "SELECT id, state FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
+    [run.id],
+  ).catch(() => ({ rows: [] }));
+  for (const task of tasksAwaitingReview.rows) {
+    await transitionUniversalTaskRecord(pool, {
+      id: task.id,
+      state: "awaiting_approval",
+      summary: taskSummary,
+      blocker: null,
+    }).catch(() => {});
+  }
+
   const terminalEvents = {
     runtime_verified: {
       type: "self_improvement_runtime_verified",
@@ -616,6 +694,18 @@ async function handleSelfImprovementRunFailure(run, error) {
   } catch {
     // Do not leak provider or repository response details through the worker.
   }
+  const tasksToBlock = await pool.query(
+    "SELECT id FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
+    [run.id],
+  ).catch(() => ({ rows: [] }));
+  for (const task of tasksToBlock.rows) {
+    await transitionUniversalTaskRecord(pool, {
+      id: task.id,
+      state: "blocked",
+      summary: "A preparação da capacidade não terminou; nenhuma execução da tarefa original foi confirmada.",
+      blocker: "Pipeline de autoaperfeiçoamento interrompido.",
+    }).catch(() => {});
+  }
   const errorName = typeof error?.name === "string" ? error.name.slice(0, 80) : "Error";
   console.error(`Execução de autoaperfeiçoamento interrompida (${errorName}); nenhuma implantação foi feita.`);
 }
@@ -665,6 +755,7 @@ async function initializeDatabase() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_capabilities_state_updated ON jarvis_capabilities (state, updated_at DESC)`);
     await initializeSelfImprovementRunQueue(pool);
     await initializeActionQueue(pool);
+    await initializeUniversalTaskStore(pool);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_learning_events_type ON jarvis_learning_events (event_type, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_messages_created ON jarvis_messages (created_at DESC, id DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_jarvis_memories_updated ON jarvis_memories (updated_at DESC, id DESC)`);
@@ -1122,6 +1213,22 @@ app.get("/api/capabilities/:id/proposals/:runId/validation", requireAuth, async 
   }
 });
 
+app.get("/api/tasks/:id", requireAuth, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  const id = typeof req.params.id === "string" ? req.params.id : "";
+  try {
+    await initializeDatabase();
+    const task = await getUniversalTaskRecord(pool, id);
+    if (!task) return res.status(404).json({ error: "Tarefa não encontrada." });
+    return res.json({ task });
+  } catch (error) {
+    if (error instanceof TypeError) return res.status(400).json({ error: "ID de tarefa inválido." });
+    console.error("Falha ao consultar tarefa universal:", error?.name || "Error");
+    return res.status(503).json({ error: "Não foi possível consultar o estado da tarefa." });
+  }
+});
+
 app.post("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
   const id = typeof req.params.id === "string" ? req.params.id : "";
   if (!id || id.length > 100) return res.status(400).json({ error: "ID de capacidade inválido." });
@@ -1374,6 +1481,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   let capabilityContext = "";
   let activeCapability = null;
   let queuedSelfImprovementRun = null;
+  let universalTaskId = null;
   if (capabilityLearningRequest) {
     try {
       const candidates = await pool.query(
@@ -1416,10 +1524,28 @@ app.post("/api/chat", requireAuth, async (req, res) => {
         activeCapability = researching;
       }
 
+      if (!looksSensitive(message)) {
+        try {
+          const universalTask = await createUniversalTaskRecord(pool, {
+            id: randomUUID(),
+            capabilityId: activeCapability.id,
+            originalRequest: message,
+            goal: capabilityLearningRequest.goal,
+          });
+          universalTaskId = universalTask.id;
+        } catch (taskError) {
+          console.error("Falha ao registrar tarefa universal:", taskError?.name || "Error");
+          capabilityContext += "\n\nREGISTRO DA TAREFA: não foi possível criar o acompanhamento persistente. Não afirme que o estado da tarefa foi salvo.";
+        }
+      } else {
+        capabilityContext += "\n\nREGISTRO DA TAREFA: acompanhamento omitido porque a mensagem pode conter dados sensíveis.";
+      }
+
       const reusableCapability = capabilityCanBeReused(activeCapability);
+      capabilityContext += "\n\nPROTOCOLO UNIVERSAL DE EXECUÇÃO: trate o pedido como tarefa, não como pedido de tutorial. Pesquise, prepare e valide a capacidade necessária; execute apenas por adaptador autorizado e verifique o resultado. Se não houver executor, permissão ou destino confirmado, informe o bloqueio sem alegar conclusão.";
       capabilityContext = buildCapabilityPromptContext(activeCapability, {
         reusable: reusableCapability,
-      });
+      }) + capabilityContext;
     } catch (error) {
       console.error("Falha ao registrar intenção de aprendizado de capacidade:", error.message);
       capabilityContext = "\n\nO usuário pediu para aprender uma capacidade, mas o registro persistente falhou. Não afirme que a solicitação foi salva nem que a capacidade foi aprendida.";
@@ -1505,6 +1631,51 @@ app.post("/api/chat", requireAuth, async (req, res) => {
       capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: a configuração segura de geração/publicação não está completa. Você pode pesquisar e planejar, mas não afirme que vai implementar, gerar uma versão ou publicar uma atualização.";
     }
   }
+  if (universalTaskId) {
+    try {
+      if (queuedSelfImprovementRun) {
+        await transitionUniversalTaskRecord(pool, {
+          id: universalTaskId,
+          state: "researching",
+          summary: "Solicitação enfileirada para pesquisa e preparação de uma proposta isolada; ainda não executada.",
+          runId: queuedSelfImprovementRun.id,
+        });
+      } else {
+        await transitionUniversalTaskRecord(pool, {
+          id: universalTaskId,
+          state: "blocked",
+          summary: "A tarefa foi registrada, mas nenhuma execução foi iniciada.",
+          blocker: capabilityAlreadyReusable
+            ? "A capacidade existente ainda não tem um adaptador de execução verificado ligado a este fluxo."
+            : "O pipeline de implementação ou um destino autorizado não está disponível.",
+        });
+      }
+    } catch (taskError) {
+      console.error("Falha ao atualizar estado da tarefa universal:", taskError?.name || "Error");
+    }
+  }
+
+  if (universalTaskId) {
+    try {
+      const taskRecord = await getUniversalTaskRecord(pool, universalTaskId);
+      if (taskRecord) {
+        res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        sendEvent(res, "task_status", {
+          taskId: taskRecord.id,
+          state: taskRecord.state,
+          goal: taskRecord.goal,
+          summary: taskRecord.summary,
+          blocker: taskRecord.blocker,
+          runId: taskRecord.run_id,
+        });
+      }
+    } catch (taskError) {
+      console.error("Falha ao emitir estado da tarefa universal:", taskError?.name || "Error");
+    }
+  }
+
   // A tool call is only a proposal. The strict allowlist, target-device binding,
   // short expiry, and explicit confirmation in Android remain mandatory.
   let proposedAndroidAction = null;
@@ -1578,6 +1749,7 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     sendEvent(res, "self_improvement_started", {
       runId: queuedSelfImprovementRun.id,
+      taskId: universalTaskId,
       capabilityId: activeCapability?.id ?? null,
       goal: activeCapability?.goal ?? message,
       target: resolveSelfImprovementTarget(activeCapability?.goal ?? message).target,
