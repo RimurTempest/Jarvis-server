@@ -18,13 +18,27 @@ test("does not cooldown ordinary client/model errors without a defined retry pol
   assert.equal(providerCooldownMs(null), 0);
 });
 
-test("prefers providers outside cooldown while preserving configured order", () => {
+test("prefers providers outside cooldown while preserving their configured order", () => {
   const providers = [{ name: "A" }, { name: "B" }, { name: "C" }];
   const cooldowns = new Map([["A", 500], ["B", 0]]);
-  assert.deepEqual(orderProvidersByCooldown(providers, cooldowns, 100), [{ name: "B" }, { name: "C" }]);
+  assert.deepEqual(orderProvidersByCooldown(providers, cooldowns, 100), [
+    { name: "B" },
+    { name: "C" },
+    { name: "A" },
+  ]);
 });
 
-test("retries the full provider list if every provider is cooling down", () => {
+test("keeps cooling providers as a final fallback when healthy providers fail", () => {
+  const providers = [{ name: "A" }, { name: "B" }, { name: "C" }];
+  const cooldowns = new Map([["A", 500], ["B", 0], ["C", 600]]);
+  assert.deepEqual(orderProvidersByCooldown(providers, cooldowns, 100), [
+    { name: "B" },
+    { name: "A" },
+    { name: "C" },
+  ]);
+});
+
+test("preserves configured order if every provider is cooling down", () => {
   const providers = [{ name: "A" }, { name: "B" }];
   const cooldowns = new Map([["A", 500], ["B", 600]]);
   assert.deepEqual(orderProvidersByCooldown(providers, cooldowns, 100), providers);
