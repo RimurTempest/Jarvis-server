@@ -112,3 +112,21 @@ test("reports auto-merge only as an explicit opt-in, not as a guarantee", () => 
   assert.equal(result.activation.autoMergeOptIn, true);
   assert.match(result.activation.note, /CI/);
 });
+
+
+test("does not confuse auto-merge opt-in with verified Render target configuration", () => {
+  const result = getSelfImprovementReadiness({
+    env: {
+      ...readyEnv,
+      JARVIS_SELF_IMPROVEMENT_AUTO_MERGE: "true",
+      JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN: "m".repeat(24),
+    },
+    databaseAvailable: true,
+    databaseInitialized: true,
+    providerCount: 1,
+    workerRunning: true,
+    autoMergeConfigured: false,
+  });
+  assert.equal(result.activation.autoMergeOptIn, true);
+  assert.equal(result.activation.autoMergeConfigured, false);
+});
