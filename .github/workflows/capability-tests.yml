@@ -23,8 +23,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install server dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Check capability module syntax
         run: |
+          node --check server.js
           node --check jarvis-capabilities/provider-failover-policy.mjs
           node --check jarvis-capabilities/test/provider-failover-policy.test.mjs
           node --check jarvis-capabilities/capability-prompt-context.mjs
