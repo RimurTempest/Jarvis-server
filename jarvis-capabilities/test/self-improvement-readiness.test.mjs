@@ -168,3 +168,59 @@ test("reports target-specific branch readiness without hiding another valid targ
   assert.equal(result.targetConfiguration.android.configured, false);
   assert.equal(result.ready, true);
 });
+
+test("rejects Git-invalid branch names for every configured target", () => {
+  const invalidBranches = [
+    "feature//broken",
+    "feature/./broken",
+    "feature/.hidden",
+    "feature/name.lock",
+    "feature/NAME.LOCK",
+    "feature/name.",
+    "feature/@{revision}",
+    "feature name",
+    "feature/~name",
+    "feature/[name]",
+    "@",
+  ];
+
+  for (const branch of invalidBranches) {
+    const result = getSelfImprovementReadiness({
+      env: {
+        ...readyEnv,
+        JARVIS_GITHUB_BASE_BRANCH: branch,
+      },
+      databaseAvailable: true,
+      databaseInitialized: true,
+      providerCount: 1,
+      workerRunning: true,
+    });
+
+    assert.equal(
+      result.targetConfiguration.server.baseBranchConfigured,
+      false,
+      `expected invalid branch to be rejected: ${branch}`,
+    );
+    assert.equal(result.targetConfiguration.server.configured, false);
+  }
+});
+
+test("accepts common safe Git branch names", () => {
+  for (const branch of ["main", "develop", "release/2026.10", "feature/secure-update_v2"]) {
+    const result = getSelfImprovementReadiness({
+      env: {
+        ...readyEnv,
+        JARVIS_GITHUB_BASE_BRANCH: branch,
+      },
+      databaseAvailable: true,
+      databaseInitialized: true,
+      providerCount: 1,
+      workerRunning: true,
+    });
+    assert.equal(
+      result.targetConfiguration.server.baseBranchConfigured,
+      true,
+      `expected safe branch to be accepted: ${branch}`,
+    );
+  }
+});
