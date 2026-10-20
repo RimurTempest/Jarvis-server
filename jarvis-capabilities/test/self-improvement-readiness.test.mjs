@@ -130,3 +130,41 @@ test("does not confuse auto-merge opt-in with verified Render target configurati
   assert.equal(result.activation.autoMergeOptIn, true);
   assert.equal(result.activation.autoMergeConfigured, false);
 });
+
+
+test("does not report a target as configured when its base branch is unsafe", () => {
+  const result = getSelfImprovementReadiness({
+    env: {
+      ...readyEnv,
+      JARVIS_GITHUB_BASE_BRANCH: "../main",
+      JARVIS_ANDROID_BASE_BRANCH: "feature\\\\bad",
+    },
+    databaseAvailable: true,
+    databaseInitialized: true,
+    providerCount: 1,
+    workerRunning: true,
+  });
+  assert.equal(result.targets.server, true);
+  assert.equal(result.targetConfiguration.server.baseBranchConfigured, false);
+  assert.equal(result.targetConfiguration.server.configured, false);
+  assert.equal(result.targetConfiguration.android.configured, false);
+  assert.equal(result.ready, false);
+  assert.ok(result.missingRequirements.includes("targetBaseBranch"));
+});
+
+test("reports target-specific branch readiness without hiding another valid target", () => {
+  const result = getSelfImprovementReadiness({
+    env: {
+      ...readyEnv,
+      JARVIS_ANDROID_BASE_BRANCH: "../main",
+    },
+    databaseAvailable: true,
+    databaseInitialized: true,
+    providerCount: 1,
+    workerRunning: true,
+  });
+  assert.equal(result.targetConfiguration.server.configured, true);
+  assert.equal(result.targetConfiguration.android.repositoryConfigured, true);
+  assert.equal(result.targetConfiguration.android.configured, false);
+  assert.equal(result.ready, true);
+});
