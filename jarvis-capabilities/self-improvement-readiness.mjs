@@ -38,11 +38,14 @@ export function getSelfImprovementReadiness({
       REPOSITORY_PATTERN.test(env.JARVIS_FULL_STACK_REPOSITORY.trim()),
   };
 
+  const hasConfiguredTarget = Object.values(targets).some(Boolean);
+  if (!hasConfiguredTarget) missingRequirements.push("targetRepository");
+
   const pipelineConfigured = missingRequirements.length === 0;
   return {
     pipelineConfigured,
     workerRunning: workerRunning === true,
-    ready: pipelineConfigured && workerRunning === true,
+    ready: pipelineConfigured && hasConfiguredTarget && workerRunning === true,
     checks,
     missingRequirements,
     targets,
@@ -51,6 +54,8 @@ export function getSelfImprovementReadiness({
         typeof env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN === "string" &&
         env.JARVIS_SELF_IMPROVEMENT_MERGE_TOKEN.trim().length >= 20,
       note: "Auto-merge readiness also depends on target, branch, CI, and runtime-health checks for each run.",
+      githubTokenPermissionsVerified: false,
+      noteOnCredentials: "Presence and format are checked; actual GitHub permissions and token validity are not tested by this diagnostic.",
     },
   };
 }
