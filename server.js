@@ -571,10 +571,27 @@ async function processSelfImprovementRun(run) {
 
 async function handleSelfImprovementRunFailure(run, error) {
   try {
-    const current = await pool.query("SELECT state FROM jarvis_self_improvement_runs WHERE id = $1", [run.id]);
-    const state = current.rows[0]?.state;
+    const current = await pool.query(
+      `SELECT state, base_revision AS "baseRevision", head_revision AS "headRevision",
+              proposal_digest AS "proposalDigest", pull_request_number AS "pullRequestNumber",
+              pull_request_url AS "pullRequestUrl", proposal_summary AS "proposalSummary",
+              merge_commit_sha AS "mergeCommitSha"
+       FROM jarvis_self_improvement_runs WHERE id = $1`,
+      [run.id],
+    );
+    const currentRun = current.rows[0];
+    const state = currentRun?.state;
     if (state === "merged") {
-      await updateSelfImprovementRun(pool, run.id, "merge_unverified");
+      await updateSelfImprovementRun(pool, run.id, "merge_unverified", {
+        baseRevision: currentRun.baseRevision,
+        headRevision: currentRun.headRevision,
+        proposalDigest: currentRun.proposalDigest,
+        pullRequestNumber: currentRun.pullRequestNumber,
+        pullRequestUrl: currentRun.pullRequestUrl,
+        proposalSummary: currentRun.proposalSummary,
+        mergeCommitSha: currentRun.mergeCommitSha,
+        errorCode: "runtime_verification_interrupted",
+      });
       await recordLearningEvent(
         "self_improvement_merge_unverified",
         "A proposta foi mesclada, mas o processo de verificação foi interrompido; o estado de produção não está confirmado.",
