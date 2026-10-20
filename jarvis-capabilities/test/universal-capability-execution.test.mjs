@@ -34,6 +34,29 @@ test("does not claim success without HTTPS evidence and independent verification
   assert.equal(result.reason, "executor_error");
 });
 
+test("rejects malformed, non-HTTPS, and credential-bearing evidence URLs", async () => {
+  for (const evidence of ["https://", "http://provider.example/message/1", "https://user:password@provider.example/message/1", "not-a-url"]) {
+    const registry = new Map([["email.send", {
+      execute: async () => ({ status: "succeeded", summary: "Concluído", evidence }),
+      verify: async () => ({ status: "succeeded", summary: "Verificado", evidence: "https://provider.example/message/1" }),
+    }]]);
+    const result = await executeUniversalTask({ task: task(), plan: plan(), adapterRegistry: registry, authorization: { confirmed: true, grantedPermissions: ["email.send"] } });
+    assert.equal(result.status, "failed", evidence);
+    assert.equal(result.reason, "executor_error", evidence);
+  }
+});
+
+test("refuses to execute a plan whose target remains unknown", async () => {
+  const unresolved = plan({ target: "unknown", requiredPermissions: [], requiresConfirmation: false });
+  const registry = new Map([["email.send", {
+    execute: async () => ({ status: "succeeded", summary: "Concluído", evidence: "https://provider.example/message/1" }),
+    verify: async () => ({ status: "succeeded", summary: "Verificado", evidence: "https://provider.example/message/1" }),
+  }]]);
+  const result = await executeUniversalTask({ task: task(), plan: unresolved, adapterRegistry: registry, authorization: { confirmed: true } });
+  assert.equal(result.status, "needs_user_action");
+  assert.equal(result.reason, "target_not_resolved");
+});
+
 test("executes only allowlisted adapter and independently verifies its result", async () => {
   const registry = new Map([["email.send", {
     execute: async () => ({ status: "succeeded", summary: "Provedor aceitou o envio", evidence: "https://provider.example/message/1" }),
