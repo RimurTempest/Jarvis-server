@@ -4,7 +4,7 @@ import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
 import { randomUUID } from "node:crypto";
-import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext } from "./jarvis-capabilities/provider-failover-policy.mjs";
+import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext, runProvidersSequentially } from "./jarvis-capabilities/provider-failover-policy.mjs";
 import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
 import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
@@ -1015,32 +1015,26 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   });
 
   const providerOrder = orderProvidersByCooldown(providers, providerCooldowns);
+  let providerStartedAt = 0;
 
-  for (const provider of providerOrder) {
-    if (clientDisconnected) return;
-    const providerStartedAt = Date.now();
-    try {
+  const providerResult = await runProvidersSequentially(
+    providerOrder,
+    async (provider) => {
+      providerStartedAt = Date.now();
       const stream = await openStream(provider, messages);
       let providerText = "";
       for await (const chunk of stream) {
-        if (clientDisconnected) return;
+        if (clientDisconnected) {
+          const disconnectError = new Error("Cliente desconectado.");
+          disconnectError.code = "CLIENT_DISCONNECTED";
+          throw disconnectError;
+        }
         const delta = chunk.choices?.[0]?.delta?.content;
         if (typeof delta === "string" && delta.length > 0) providerText += delta;
       }
-      if (!providerText.trim()) {
-        const emptyError = new Error("Resposta vazia do provedor.");
-        emptyError.code = "EMPTY_RESPONSE";
-        throw emptyError;
-      }
-
-      // Só envia texto depois que o provedor conclui. Assim, uma falha parcial
-      // não contamina a resposta nem impede uma tentativa limpa no próximo provedor.
-      responseText = providerText;
-      providerSucceeded = true;
-      providerCooldowns.delete(provider.name);
-      console.info(`[chat] request_id=${requestId} event=provider_succeeded provider=${provider.name} duration_ms=${Date.now() - providerStartedAt} response_chars=${providerText.length}`);
-      break;
-    } catch (error) {
+      return providerText;
+    },
+    (provider, error) => {
       const status = Number.isInteger(error?.status) ? error.status : "unknown";
       const code = typeof error?.code === "string" && /^[A-Z0-9_-]{1,40}$/i.test(error.code)
         ? error.code
@@ -1051,8 +1045,16 @@ app.post("/api/chat", requireAuth, async (req, res) => {
         providerCooldowns.set(provider.name, Date.now() + cooldown);
         console.warn(`[chat] request_id=${requestId} event=provider_cooldown provider=${provider.name} duration_ms=${cooldown}`);
       }
-      if (res.destroyed || clientDisconnected) return;
-    }
+    },
+    () => clientDisconnected || res.destroyed
+  );
+
+  if (clientDisconnected || res.destroyed) return;
+  if (providerResult) {
+    responseText = providerResult.text;
+    providerSucceeded = true;
+    providerCooldowns.delete(providerResult.provider.name);
+    console.info(`[chat] request_id=${requestId} event=provider_succeeded provider=${providerResult.provider.name} duration_ms=${Date.now() - providerStartedAt} response_chars=${responseText.length}`);
   }
 
   if (!providerSucceeded) {
