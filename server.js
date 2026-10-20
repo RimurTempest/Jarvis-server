@@ -1553,8 +1553,8 @@ app.post("/api/chat", requireAuth, async (req, res) => {
       if (!looksSensitive(message)) {
         try {
           const safeOriginalRequest = String(message).slice(0, MAX_MESSAGE_LENGTH)
-            .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi, "[email redacted]")
-            .replace(/(?<!\\w)\\+?\\d[\\d\\s().-]{7,}\\d(?!\\w)/g, "[phone redacted]");
+            .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email redacted]")
+            .replace(/(?<!\w)\+?\d[\d\s().-]{7,}\d(?!\w)/g, "[phone redacted]");
           const universalTask = await createUniversalTaskRecord(pool, {
             id: randomUUID(),
             capabilityId: activeCapability.id,
@@ -1564,10 +1564,10 @@ app.post("/api/chat", requireAuth, async (req, res) => {
           universalTaskId = universalTask.id;
         } catch (taskError) {
           console.error("Falha ao registrar tarefa universal:", taskError?.name || "Error");
-          capabilityContext += "\\n\\nREGISTRO DA TAREFA: não foi possível criar o acompanhamento persistente. Não afirme que o estado foi salvo.";
+          capabilityContext += "\n\nREGISTRO DA TAREFA: não foi possível criar o acompanhamento persistente. Não afirme que o estado foi salvo.";
         }
       } else {
-        capabilityContext += "\\n\\nREGISTRO DA TAREFA: acompanhamento omitido porque a mensagem pode conter dados sensíveis.";
+        capabilityContext += "\n\nREGISTRO DA TAREFA: acompanhamento omitido porque a mensagem pode conter dados sensíveis.";
       }
 
       const reusableCapability = capabilityCanBeReused(activeCapability);
