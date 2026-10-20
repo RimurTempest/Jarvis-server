@@ -1942,9 +1942,11 @@ let selfImprovementWorker = null;
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`JARVIS online na porta ${PORT}`);
 });
-void logSafeGitHubAccessDiagnostics().catch(() => {
-  console.warn("JARVIS GitHub access diagnostic indisponível; nenhum dado de credencial foi registrado.");
-});
+if (process.env.JARVIS_GITHUB_ACCESS_DIAGNOSTICS === "true") {
+  void logSafeGitHubAccessDiagnostics().catch(() => {
+    console.warn("JARVIS GitHub access diagnostic indisponível; nenhum dado de credencial foi registrado.");
+  });
+}
 if (selfImprovementPipelineEnabled()) {
   void initializeDatabase().then(() => {
     selfImprovementWorker = startSelfImprovementWorker({ pool, processRun: processSelfImprovementRun, onFailure: handleSelfImprovementRunFailure, onWorkerError: (error) => console.error(`Worker de autoaperfeiçoamento indisponível (${error?.name || "Error"}).`) });
