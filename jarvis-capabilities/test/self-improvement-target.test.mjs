@@ -81,3 +81,39 @@ test("rejects malformed required CI workflow configuration", () => {
   }), /nomes únicos/i);
   assert.throws(() => requiredWorkflowsForTarget("unknown", {}), /target inválido/i);
 });
+
+test("rejects Git-invalid base branches before selecting a repository target", () => {
+  const invalidBranches = [
+    "feature//broken",
+    "feature/./broken",
+    "feature/.hidden",
+    "feature/name.lock",
+    "feature/NAME.LOCK",
+    "feature/name.",
+    "feature/@{revision}",
+    "feature name",
+    "feature/~name",
+    "feature/[name]",
+    "@",
+  ];
+
+  for (const baseBranch of invalidBranches) {
+    const result = resolveSelfImprovementTarget("Criar API no servidor", {
+      JARVIS_GITHUB_REPOSITORY: "RimurTempest/Jarvis-server",
+      JARVIS_GITHUB_BASE_BRANCH: baseBranch,
+    });
+    assert.equal(result.available, false, baseBranch);
+    assert.match(result.reason, /branch base.*inválida/i, baseBranch);
+  }
+});
+
+test("accepts common safe base branch names", () => {
+  for (const baseBranch of ["main", "develop", "release/2026.10", "feature/secure-update_v2"]) {
+    const result = resolveSelfImprovementTarget("Criar API no servidor", {
+      JARVIS_GITHUB_REPOSITORY: "RimurTempest/Jarvis-server",
+      JARVIS_GITHUB_BASE_BRANCH: baseBranch,
+    });
+    assert.equal(result.available, true, baseBranch);
+    assert.equal(result.baseBranch, baseBranch);
+  }
+});
