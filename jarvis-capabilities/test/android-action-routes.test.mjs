@@ -40,6 +40,7 @@ test("registers enrollment, revocation, polling, and result endpoints without a 
   for (const route of [
     "POST /api/android/enrollment/pairing-code",
     "POST /api/android/enrollment/complete",
+    "GET /api/android/enrollment/status",
     "POST /api/android/devices/:id/revoke",
     "GET /api/android/actions/next",
     "POST /api/android/actions/:id/result",
@@ -105,4 +106,29 @@ test("queue failures do not leak internal error details", async () => {
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: "Não foi possível consultar a fila de ações." });
   assert.equal(JSON.stringify(res.body).includes("password"), false);
+});
+
+
+test("link status confirms the authenticated device and returns a current check timestamp", async () => {
+  const app = makeApp();
+  registerAndroidActionRoutes(app, { pool: makePool(), initializeDatabase: async () => {} });
+  const req = { headers };
+  const res = makeResponse();
+  assert.equal(await runAuth(app, "GET", "/api/android/enrollment/status", req, res), true);
+  await app.routes.get("GET /api/android/enrollment/status")[1](req, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.linked, true);
+  assert.equal(res.body.deviceId, deviceId);
+  assert.ok(Number.isFinite(Date.parse(res.body.checkedAt)));
+});
+
+test("link status never confirms a device rejected by the registry", async () => {
+  const app = makeApp();
+  registerAndroidActionRoutes(app, { pool: makePool({ authorized: false }), initializeDatabase: async () => {} });
+  const req = { headers };
+  const res = makeResponse();
+  const nextCalled = await runAuth(app, "GET", "/api/android/enrollment/status", req, res);
+  assert.equal(nextCalled, false);
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(res.body, { error: "Dispositivo Android não autorizado." });
 });
