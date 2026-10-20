@@ -1,6 +1,10 @@
 const API_ROOT = "https://api.github.com";
 const API_VERSION = "2022-11-28";
-const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+[/][A-Za-z0-9_.-]+$/;
+function isValidRepository(value) {
+  if (typeof value !== "string") return false;
+  const parts = value.trim().split("/");
+  return parts.length === 2 && parts.every((part) => /^[A-Za-z0-9_.-]+$/.test(part));
+}
 
 async function readGitHubEndpoint({ token, path, fetchImpl, timeoutMs }) {
   const controller = new AbortController();
@@ -51,7 +55,7 @@ export async function inspectSelfImprovementGitHubAccess({
       writePermissionsVerified: false,
     };
   }
-  if (typeof repository !== "string" || !REPOSITORY_PATTERN.test(repository.trim())) {
+  if (!isValidRepository(repository)) {
     return {
       checked: false,
       repositoryReadable: false,
