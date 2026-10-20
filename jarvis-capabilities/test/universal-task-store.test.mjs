@@ -83,3 +83,20 @@ test("returns null for missing task records", async () => {
   assert.equal(await getUniversalTaskRecord(pool, id), null);
   assert.equal(await transitionUniversalTaskRecord(pool, { id, state: "researching" }), null);
 });
+
+
+test("supports real worker progress, CI repair, and approval transitions without claiming task execution", async () => {
+  const pool = fakePool();
+  await createUniversalTaskRecord(pool, { id, originalRequest: "Crie uma integração", goal: "Pesquisar e preparar a integração" });
+  await transitionUniversalTaskRecord(pool, { id, state: "researching", summary: "Pesquisa iniciada." });
+  await transitionUniversalTaskRecord(pool, { id, state: "planning", summary: "Planejamento iniciado." });
+  await transitionUniversalTaskRecord(pool, { id, state: "implementing", summary: "Implementação isolada iniciada." });
+  await transitionUniversalTaskRecord(pool, { id, state: "testing", summary: "Validando a proposta." });
+  const repair = await transitionUniversalTaskRecord(pool, { id, state: "implementing", summary: "Corrigindo a proposta após falha de CI." });
+  assert.equal(repair.state, "implementing");
+  const testing = await transitionUniversalTaskRecord(pool, { id, state: "testing", summary: "Revalidando a proposta." });
+  assert.equal(testing.state, "testing");
+  const awaiting = await transitionUniversalTaskRecord(pool, { id, state: "awaiting_approval", summary: "A proposta aguarda revisão; a ação original ainda não foi executada." });
+  assert.equal(awaiting.state, "awaiting_approval");
+  assert.match(awaiting.summary, /ação original ainda não foi executada/);
+});
