@@ -87,6 +87,8 @@ jobs:
           node --check jarvis-capabilities/test/self-improvement-capability-sync.test.mjs
           node --check jarvis-capabilities/test/self-improvement-capability-recovery.integration.test.mjs
           node --check jarvis-capabilities/universal-capability-execution.mjs
+          node --check jarvis-capabilities/universal-task-orchestrator.mjs
+          node --check jarvis-capabilities/test/universal-task-orchestrator.test.mjs
           node --check jarvis-capabilities/test/universal-capability-execution.test.mjs
           node --check jarvis-capabilities/universal-task-store.mjs
           node --check jarvis-capabilities/universal-task-recovery.mjs
@@ -124,5 +126,6 @@ jobs:
           node --test jarvis-capabilities/test/self-improvement-capability-sync.test.mjs
           node --test jarvis-capabilities/test/self-improvement-capability-recovery.integration.test.mjs
           node --test jarvis-capabilities/test/universal-capability-execution.test.mjs
+          node --test jarvis-capabilities/test/universal-task-orchestrator.test.mjs
           node --test jarvis-capabilities/test/universal-task-store.test.mjs
           node --test jarvis-capabilities/test/universal-task-recovery.test.mjs
