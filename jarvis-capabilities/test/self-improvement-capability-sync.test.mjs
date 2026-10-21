@@ -61,4 +61,5 @@ test("a validated capability is never downgraded by a later run result", () => {
 test("invalid outcomes and missing source revisions fail closed", () => {
   assert.throws(() => resolveCapabilityRunOutcome(base(), { runState: "researching" }), /Estado terminal/);
   assert.throws(() => resolveCapabilityRunOutcome(base(), { ...success, sourceRevision: "not-a-sha" }), /sourceRevision/);
+  assert.throws(() => resolveCapabilityRunOutcome(base(), { ...success, sourceRevision: undefined }), /sourceRevision/);
 });
