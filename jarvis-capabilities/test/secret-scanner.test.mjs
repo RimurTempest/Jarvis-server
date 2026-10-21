@@ -15,6 +15,8 @@ test("does not flag environment lookups, documented placeholders, or ordinary so
   assert.equal(containsLikelySecret('val token = "TEST-fake-token-for-unit-test";'), false);
   assert.equal(containsLikelySecret('const password = "REPLACE_ME";'), false);
   assert.equal(containsLikelySecret("export const safe = true;"), false);
+  assert.equal(containsLikelySecret("const token = tokenInput.value.trim();"), false);
+  assert.equal(containsLikelySecret("const token = crypto.randomUUID();"), false);
   assert.equal(containsLikelySecret(null), false);
 });
 
