@@ -8,13 +8,49 @@ const RISK_LEVELS = new Set(["low", "moderate", "high", "critical"]);
 const TARGETS = new Set(["server", "android", "external_service", "local_device", "unknown"]);
 const EXECUTABLE_TARGETS = new Set(["server", "android", "external_service", "local_device"]);
 const EXECUTION_STATES = new Set(["succeeded", "failed", "unverified", "needs_user_action"]);
-const SECRET_PATTERN = /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|credential|authorization|password|senha|secret|chave(?:\s+de\s+acesso)?)\s*[:=]\s*[^\s,;]+|-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+[a-z0-9._-]{12,}/i;
+const SECRET_PATTERN = /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|credential|authorization|password|senha|secret|chave(?:\s+de\s+acesso)?)\s*["']?\s*[:=]\s*["']?[^\s,;"']+|-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+[a-z0-9._-]{12,}/i;
 
 function requiredText(value, field, max = 4000) {
   if (typeof value !== "string" || !value.trim() || value.length > max) throw new TypeError(field + " inválido.");
   const result = value.trim();
   if (SECRET_PATTERN.test(result)) throw new TypeError(field + " parece conter credenciais; conteúdo recusado.");
   return result;
+}
+
+function normalizeStepParameters(value, index) {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("steps[" + index + "].parameters deve ser um objeto estruturado.");
+  }
+  const visit = (item, depth = 0) => {
+    if (depth > 8) throw new RangeError("Parâmetros da etapa excedem a profundidade permitida.");
+    if (item === null || typeof item === "string" || typeof item === "boolean") return;
+    if (typeof item === "number") {
+      if (!Number.isFinite(item)) throw new TypeError("Parâmetro numérico inválido.");
+      return;
+    }
+    if (Array.isArray(item)) {
+      if (item.length > 100) throw new RangeError("Lista de parâmetros muito grande.");
+      for (const child of item) visit(child, depth + 1);
+      return;
+    }
+    if (typeof item !== "object" || Object.getPrototypeOf(item) !== Object.prototype) {
+      throw new TypeError("Parâmetros devem conter apenas dados JSON.");
+    }
+    const entries = Object.entries(item);
+    if (entries.length > 100) throw new RangeError("Objeto de parâmetros muito grande.");
+    for (const [key, child] of entries) {
+      if (["__proto__", "prototype", "constructor", "code", "script", "shell", "command", "javascript", "eval"].includes(key.toLowerCase())) {
+        throw new TypeError("Chave de parâmetro não permitida.");
+      }
+      visit(child, depth + 1);
+    }
+  };
+  visit(value);
+  const serialized = JSON.stringify(value);
+  if (serialized.length > 8000) throw new RangeError("Parâmetros da etapa excedem o limite permitido.");
+  if (SECRET_PATTERN.test(serialized)) throw new TypeError("Parâmetros da etapa parecem conter credenciais.");
+  return JSON.parse(serialized);
 }
 
 function isSafeEvidenceUrl(value) {
@@ -55,7 +91,8 @@ export function createUniversalTaskPlan(input) {
     if (!step || typeof step !== "object" || Array.isArray(step)) throw new TypeError("Etapa " + index + " inválida.");
     const kind = requiredText(step.kind, "steps[" + index + "].kind", 80);
     if (!/^[a-z][a-z0-9_.-]*$/.test(kind)) throw new TypeError("Tipo de etapa não permitido.");
-    return { kind, description: requiredText(step.description, "steps[" + index + "].description", 500), reversible: step.reversible === true };
+    const parameters = normalizeStepParameters(step.parameters, index);
+    return { kind, description: requiredText(step.description, "steps[" + index + "].description", 500), reversible: step.reversible === true, ...(parameters === undefined ? {} : { parameters }) };
   });
   const acceptanceCriteria = input.acceptanceCriteria.map((item, index) => requiredText(item, "acceptanceCriteria[" + index + "]", 500));
   const requiredPermissions = [...new Set(input.requiredPermissions.map((item, index) => requiredText(item, "requiredPermissions[" + index + "]", 200)))];

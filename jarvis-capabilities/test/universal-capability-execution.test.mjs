@@ -96,3 +96,63 @@ test("rejects invalid task plans and secret-bearing goals", () => {
   assert.throws(() => createUniversalTaskRequest({ id: "task-3", originalRequest: "Bearer abcdefghijklmnop", goal: "do thing" }), /credenciais/);
   assert.throws(() => createUniversalTaskPlan({ goal: "x", target: "unsupported_target", riskLevel: "low", requiredPermissions: [], steps: [], acceptanceCriteria: [], rollbackPlan: "none" }));
 });
+
+test("preserves validated structured parameters for adapters without treating them as code", () => {
+  const structured = plan({
+    requiredPermissions: [],
+    requiresConfirmation: false,
+    steps: [{
+      kind: "email.send",
+      description: "Enviar mensagem pelo adaptador registrado",
+      reversible: false,
+      parameters: { to: ["recipient@example.com"], subject: "Relatório", body: "Segue o relatório.", metadata: { priority: 2 } },
+    }],
+  });
+  assert.deepEqual(structured.steps[0].parameters, {
+    to: ["recipient@example.com"], subject: "Relatório", body: "Segue o relatório.", metadata: { priority: 2 },
+  });
+});
+
+test("rejects secret-bearing and executable-code step parameters", () => {
+  const base = {
+    goal: "Executar uma etapa", target: "server", riskLevel: "low",
+    requiredPermissions: [], acceptanceCriteria: ["Resultado verificável."], rollbackPlan: "Sem alteração persistente.",
+  };
+  assert.throws(() => createUniversalTaskPlan({
+    ...base, steps: [{ kind: "server.echo", description: "Etapa", parameters: { access_token: "secret-value" } }],
+  }), /credenciais/);
+  assert.throws(() => createUniversalTaskPlan({
+    ...base, steps: [{ kind: "server.echo", description: "Etapa", parameters: { command: "rm -rf /" } }],
+  }), /Chave de parâmetro não permitida/);
+  assert.throws(() => createUniversalTaskPlan({
+    ...base, steps: [{ kind: "server.echo", description: "Etapa", parameters: ["not", "an", "object"] }],
+  }), /objeto estruturado/);
+});
+
+test("passes normalized structured parameters only to the registered adapter", async () => {
+  let received = null;
+  const actionPlan = plan({
+    requiredPermissions: [],
+    requiresConfirmation: false,
+    steps: [{
+      kind: "email.send",
+      description: "Enviar relatório",
+      reversible: false,
+      parameters: { to: ["recipient@example.com"], subject: "Relatório", body: "Segue anexo." },
+    }],
+  });
+  const registry = new Map([["email.send", {
+    target: "external_service",
+    execute: async ({ step }) => {
+      received = step.parameters;
+      return { status: "succeeded", summary: "Provedor aceitou a solicitação.", evidence: "https://provider.example/message/2" };
+    },
+    verify: async () => ({ status: "succeeded", summary: "Mensagem localizada.", evidence: "https://provider.example/message/2" }),
+  }]]);
+  const result = await executeUniversalTask({
+    task: task(), plan: actionPlan, adapterRegistry: registry,
+    authorization: { confirmed: true, grantedPermissions: [] },
+  });
+  assert.equal(result.status, "succeeded");
+  assert.deepEqual(received, { to: ["recipient@example.com"], subject: "Relatório", body: "Segue anexo." });
+});

@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext, runProvidersSequentially } from "./jarvis-capabilities/provider-failover-policy.mjs";
 import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
+import { detectExplicitLearning } from "./jarvis-capabilities/explicit-learning.mjs";
 import { parseCapabilityIntentClassification, shouldClassifyCapabilityIntent } from "./jarvis-capabilities/capability-intent-classifier.mjs";
 import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
 import { registerAndroidActionRoutes } from "./jarvis-capabilities/android-action-routes.mjs";
@@ -21,10 +22,15 @@ import { mergeValidatedSelfImprovementDraft } from "./jarvis-capabilities/self-i
 import { resolveRuntimeHealthUrl, verifyRuntimeRevision, revertMergedCommitSafely, isSelfImprovementAutoMergeConfigured } from "./jarvis-capabilities/self-improvement-runtime-guard.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 import { initializeUniversalTaskStore, createUniversalTaskRecord, transitionUniversalTaskRecord, getUniversalTaskRecord } from "./jarvis-capabilities/universal-task-store.mjs";
+import { runPersistedUniversalTask } from "./jarvis-capabilities/universal-task-orchestrator.mjs";
+import { createAndroidUniversalAdapterRegistry } from "./jarvis-capabilities/universal-task-android-adapters.mjs";
+import { initializeAndroidDeviceRegistry } from "./jarvis-capabilities/android-device-registry.mjs";
 import { getSelfImprovementReadiness } from "./jarvis-capabilities/self-improvement-readiness.mjs";
+import { resolveUniversalTaskRecovery } from "./jarvis-capabilities/universal-task-recovery.mjs";
 import { shouldShowSources } from "./jarvis-capabilities/source-display-policy.mjs";
 import { inspectSelfImprovementGitHubAccess } from "./jarvis-capabilities/self-improvement-github-access.mjs";
 import { getSelfImprovementVisualState } from "./jarvis-capabilities/self-improvement-visual-state.mjs";
+import { resolveCapabilityRunOutcome } from "./jarvis-capabilities/self-improvement-capability-sync.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -433,42 +439,6 @@ async function recordLearningEvent(eventType, summary, details = {}, sourceMessa
   );
 }
 
-function detectExplicitLearning(message) {
-  const raw = String(message ?? "").trim();
-  const normalized = normalizeText(raw);
-  if (!raw || raw.length > MAX_AUTO_MEMORY_LENGTH) return null;
-  // Uma intenção de aprender uma capacidade pertence ao registro de capacidades,
-  // não deve ser memorizada incorretamente como preferência pessoal.
-  if (detectCapabilityLearningRequest(raw)) return null;
-  // Nunca captura automaticamente credenciais ou números que pareçam documentos/cartões.
-  if (looksSensitive(raw) || /\b(cpf|rg|cartao de credito|cartão de crédito|cvv|codigo de seguranca|código de segurança|seed phrase|frase de recuperacao|frase de recuperação)\b/i.test(raw)) return null;
-
-  const preferencePatterns = [
-    /\b(prefiro|minha preferencia e|minha preferência é)\b/i,
-    /\b(me chame de|quero ser chamado de|quero que me chame de)\b/i,
-    /\b(daqui em diante|de agora em diante|sempre faça|sempre faca|sempre responda|não altere|nao altere)\b/i,
-    /\b(quero que você sempre|quero que voce sempre|não quero que você|nao quero que voce)\b/i,
-  ];
-  if (preferencePatterns.some((pattern) => pattern.test(raw)) && normalized.length >= 10) {
-    return { type: "explicit_preference", category: "preferencia", content: raw, confidence: 0.95 };
-  }
-
-  const correctionPatterns = [
-    /^corrigindo[: ,]/i,
-    /^correção[: ,]/i,
-    /^correcao[: ,]/i,
-    /^na verdade[, :]/i,
-    /^isso está errado[, :]/i,
-    /^isso esta errado[, :]/i,
-    /^você entendeu errado[, :]/i,
-    /^voce entendeu errado[, :]/i,
-  ];
-  if (correctionPatterns.some((pattern) => pattern.test(raw))) {
-    return { type: "user_correction", category: null, content: raw, confidence: 0.8 };
-  }
-  return null;
-}
-
 async function captureExplicitLearning(message, userMessageId) {
   const learning = detectExplicitLearning(message);
   if (!learning) return null;
@@ -827,6 +797,127 @@ async function logSafeGitHubAccessDiagnostics() {
   console.info("JARVIS GitHub access diagnostic:", JSON.stringify(Object.fromEntries(results)));
 }
 
+async function persistCapabilityRunOutcome(capabilityId, outcome) {
+  const selected = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [capabilityId]);
+  if (!selected.rowCount) return null;
+  const current = selected.rows[0].record;
+  const next = resolveCapabilityRunOutcome(current, outcome);
+  if (next === current) return current;
+  const updated = await pool.query(
+    `UPDATE jarvis_capabilities
+     SET goal = $1, state = $2, record = $3::jsonb, updated_at = NOW()
+     WHERE id = $4 AND state = $5 AND record = $6::jsonb
+     RETURNING record`,
+    [next.goal, next.state, JSON.stringify(next), capabilityId, current.state, JSON.stringify(current)],
+  );
+  if (!updated.rowCount) throw new Error("Registro de capacidade alterado em paralelo; sincronização terminal recusada.");
+  await recordLearningEvent("capability_state_changed", next.goal, {
+    capabilityId, previousState: current.state, state: next.state,
+    runId: outcome.runId ?? null, runState: outcome.runState, errorCode: outcome.errorCode ?? null,
+  }).catch(() => {});
+  return updated.rows[0].record;
+}
+
+async function reconcileStaleCapabilities() {
+  if (!pool) return 0;
+  const staleAfterMinutes = 10;
+  const result = await pool.query(
+    `SELECT capability.id AS "capabilityId",
+            run.id AS "runId", run.state AS "runState", run.error_code AS "errorCode",
+            run.proposal_summary AS summary, run.head_revision AS "sourceRevision",
+            run.pull_request_number AS "pullRequestNumber", run.pull_request_url AS "pullRequestUrl",
+            run.updated_at AS "runUpdatedAt"
+     FROM jarvis_capabilities AS capability
+     LEFT JOIN LATERAL (
+       SELECT id, state, error_code, proposal_summary, head_revision,
+              pull_request_number, pull_request_url, updated_at
+       FROM jarvis_self_improvement_runs
+       WHERE capability_id = capability.id
+       ORDER BY created_at DESC LIMIT 1
+     ) AS run ON TRUE
+     WHERE capability.state = 'researching'
+       AND capability.updated_at < NOW() - ($1::int * INTERVAL '1 minute')
+       AND (
+         run.id IS NULL
+         OR run.state IN ('draft_pr_created', 'runtime_verified', 'rolled_back', 'merge_unverified', 'failed')
+         OR (run.state = 'merged' AND run.updated_at < NOW() - (($1::int * 2) * INTERVAL '1 minute'))
+       )
+     ORDER BY capability.updated_at ASC
+     LIMIT 100`,
+    [staleAfterMinutes],
+  );
+
+  let reconciled = 0;
+  for (const candidate of result.rows) {
+    let outcome;
+    if (!candidate.runId) {
+      outcome = { runState: "failed", errorCode: "orphaned_researching" };
+    } else {
+      const runState = candidate.runState === "merged" ? "merge_unverified" : candidate.runState;
+      outcome = {
+        runId: candidate.runId,
+        runState,
+        errorCode: candidate.errorCode || (runState === "merge_unverified" ? "runtime_verification_interrupted" : "pipeline_failed"),
+        summary: candidate.summary || "Proposta recuperada de uma execução anterior.",
+        sourceRevision: candidate.sourceRevision,
+        pullRequestNumber: candidate.pullRequestNumber,
+        pullRequestUrl: candidate.pullRequestUrl,
+        changedPaths: [],
+      };
+    }
+
+    try {
+      await persistCapabilityRunOutcome(candidate.capabilityId, outcome);
+      reconciled += 1;
+    } catch {
+      // A malformed terminal record must not stop startup or fabricate validation.
+      try {
+        await persistCapabilityRunOutcome(candidate.capabilityId, {
+          runState: "failed",
+          errorCode: "stale_capability_reconciliation_failed",
+        });
+        reconciled += 1;
+      } catch {
+        console.error("Falha ao reconciliar uma capacidade antiga em researching.");
+      }
+    }
+  }
+  if (reconciled) console.info(`Capacidades antigas reconciliadas: ${reconciled}`);
+  return reconciled;
+}
+
+
+async function reconcileStaleUniversalTasks() {
+  if (!pool) return 0;
+  const result = await pool.query(
+    `SELECT task.id, task.state AS task_state, run.state AS run_state
+     FROM jarvis_universal_tasks AS task
+     JOIN jarvis_self_improvement_runs AS run ON run.id = task.run_id
+     WHERE task.state IN ('researching', 'planning', 'implementing', 'testing')
+       AND run.state IN ('draft_pr_created', 'runtime_verified', 'rolled_back', 'merge_unverified', 'failed')
+     ORDER BY task.updated_at ASC
+     LIMIT 200`,
+  );
+  let reconciled = 0;
+  for (const row of result.rows) {
+    const recovery = resolveUniversalTaskRecovery(row.run_state, row.task_state);
+    if (!recovery) continue;
+    try {
+      const updated = await transitionUniversalTaskRecord(pool, {
+        id: row.id,
+        state: recovery.state,
+        summary: recovery.summary,
+        blocker: recovery.blocker,
+      });
+      if (updated) reconciled += 1;
+    } catch (error) {
+      console.error("Falha ao reconciliar tarefa universal após reinício:", error?.name || "Error");
+    }
+  }
+  if (reconciled) console.info(`Tarefas universais reconciliadas: ${reconciled}`);
+  return reconciled;
+}
+
 async function processSelfImprovementRun(run) {
   const selected = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [run.capability_id]);
   if (!selected.rowCount) {
@@ -1076,6 +1167,13 @@ async function processSelfImprovementRun(run) {
       ? { errorCode: runtimeVerificationReason.slice(0, 80) }
       : {}),
   };
+  await persistCapabilityRunOutcome(run.capability_id, {
+    runId: run.id, runState: finalState, summary: finalDraft.summary,
+    sourceCount: finalDraft.sourceCount, sourceRevision: finalDraft.pullRequest.commitSha,
+    pullRequestNumber: finalDraft.pullRequest.number, pullRequestUrl: finalDraft.pullRequest.url,
+    changedPaths: finalDraft.changedPaths, errorCode: persistedRunMetadata.errorCode,
+  });
+
   if (finalState !== "draft_pr_created") {
     await updateSelfImprovementRun(pool, run.id, finalState, persistedRunMetadata);
   } else {
@@ -1143,6 +1241,7 @@ async function processSelfImprovementRun(run) {
 
 async function handleSelfImprovementRunFailure(run, error) {
   let safeFailureCode = "pipeline_failed";
+  let capabilityOutcomeState = "failed";
   try {
     const current = await pool.query(
       `SELECT state, base_revision AS "baseRevision", head_revision AS "headRevision",
@@ -1154,7 +1253,9 @@ async function handleSelfImprovementRunFailure(run, error) {
     );
     const currentRun = current.rows[0];
     const state = currentRun?.state;
+    capabilityOutcomeState = state || "failed";
     if (state === "merged") {
+      capabilityOutcomeState = "merge_unverified";
       safeFailureCode = "runtime_verification_interrupted";
       await updateSelfImprovementRun(pool, run.id, "merge_unverified", {
         baseRevision: currentRun.baseRevision,
@@ -1192,6 +1293,7 @@ async function handleSelfImprovementRunFailure(run, error) {
         ? error.code
         : (stageErrorCodes[state] || "pipeline_failed");
       safeFailureCode = errorCode;
+      capabilityOutcomeState = "failed";
       await updateSelfImprovementRun(pool, run.id, "failed", { errorCode });
       await recordLearningEvent(
         "self_improvement_run_failed",
@@ -1202,6 +1304,12 @@ async function handleSelfImprovementRunFailure(run, error) {
   } catch {
     // Do not leak provider or repository response details through the worker.
   }
+  await persistCapabilityRunOutcome(run.capability_id, {
+    runId: run.id, runState: capabilityOutcomeState, errorCode: safeFailureCode,
+  }).catch(() => {
+    console.error("Falha ao sincronizar o estado terminal da capacidade.");
+  });
+
   const tasksToBlock = await pool.query(
     "SELECT id FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
     [run.id],
@@ -1410,6 +1518,73 @@ app.get("/api/tasks/:id", requireAuth, async (req, res) => {
   }
 });
 
+app.post("/api/tasks/:id/execute", requireAuth, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  const id = typeof req.params.id === "string" ? req.params.id : "";
+  const deviceId = typeof req.body?.deviceId === "string" ? req.body.deviceId : "";
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body) ||
+      !req.body.plan || typeof req.body.plan !== "object" || Array.isArray(req.body.plan) ||
+      req.body.confirmed !== true || !deviceId) {
+    return res.status(400).json({
+      error: "Informe um plano estruturado, o dispositivo pareado e a confirmação explícita da execução.",
+    });
+  }
+
+  try {
+    await initializeDatabase();
+    const task = await getUniversalTaskRecord(pool, id);
+    if (!task) return res.status(404).json({ error: "Tarefa não encontrada." });
+    if (!["planning", "awaiting_approval"].includes(task.state)) {
+      return res.status(409).json({
+        error: "A tarefa não está em um estado autorizado para execução.",
+        state: task.state,
+      });
+    }
+
+    await initializeAndroidDeviceRegistry(pool);
+    const enrolledDevice = await pool.query(
+      "SELECT device_id FROM jarvis_android_devices WHERE device_id = $1 AND revoked_at IS NULL",
+      [deviceId],
+    );
+    if (!enrolledDevice.rowCount) {
+      return res.status(403).json({ error: "O dispositivo selecionado não está pareado ou foi revogado." });
+    }
+
+    const publicBaseUrl = process.env.JARVIS_PUBLIC_URL || process.env.RENDER_EXTERNAL_URL;
+    let adapterRegistry;
+    try {
+      adapterRegistry = createAndroidUniversalAdapterRegistry({ pool, publicBaseUrl });
+    } catch {
+      return res.status(503).json({ error: "A URL pública HTTPS necessária para verificar a execução não está configurada." });
+    }
+
+    const outcome = await runPersistedUniversalTask({
+      pool,
+      task,
+      plan: req.body.plan,
+      adapterRegistry,
+      authorization: {
+        confirmed: req.body.confirmed === true,
+        grantedPermissions: [],
+        securityReviewPassed: false,
+      },
+      context: { deviceId, androidActionIds: new Map() },
+    });
+    const updated = await getUniversalTaskRecord(pool, id);
+    const statusCode = outcome.status === "succeeded" ? 200
+      : outcome.status === "needs_user_action" ? 409
+        : outcome.status === "unverified" ? 502 : 502;
+    return res.status(statusCode).json({ outcome, task: updated });
+  } catch (error) {
+    if (error instanceof TypeError || error instanceof RangeError) {
+      return res.status(400).json({ error: "Plano ou parâmetros da tarefa inválidos." });
+    }
+    console.error("Falha na execução universal Android:", error?.name || "Error");
+    return res.status(503).json({ error: "Não foi possível concluir e verificar a execução da tarefa." });
+  }
+});
+
 app.post("/api/capabilities/:id/proposals", requireAuth, async (req, res) => {
   const id = typeof req.params.id === "string" ? req.params.id : "";
   if (!id || id.length > 100) return res.status(400).json({ error: "ID de capacidade inválido." });
@@ -1580,14 +1755,14 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   if (!message) return res.status(400).json({ error: "A mensagem não pode estar vazia." });
   if (message.length > MAX_MESSAGE_LENGTH) return res.status(413).json({ error: "A mensagem excede o limite permitido." });
   if (!pool) return res.status(503).json({ error: "Banco de dados não configurado." });
-  if (!providers.length) return res.status(503).json({ error: "Nenhum provedor de IA configurado." });
-
   try {
     await initializeDatabase();
   } catch (error) {
     console.error("Falha ao inicializar banco:", error.message);
     return res.status(503).json({ error: "Banco de dados indisponível." });
   }
+
+  if (!providers.length) return res.status(503).json({ error: "Nenhum provedor de IA configurado." });
 
   const memoryCommand = parseMemoryCommand(message);
   if (memoryCommand) {
@@ -1752,7 +1927,8 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     if (selfImprovementPipelineEnabled()) {
       const target = resolveSelfImprovementTarget(activeCapability.goal);
       if (!target.available) {
-        capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO BLOQUEADO: ${target.reason} Não afirme que o código foi implementado nem que haverá uma atualização pronta.`;
+        await persistCapabilityRunOutcome(activeCapability.id, { runState: "failed", errorCode: "target_unavailable" }).catch(() => {});
+        capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO BLOQUEADO: ${target.reason} A capacidade foi marcada como bloqueada. Não afirme que o código foi implementado nem que haverá uma atualização pronta.`;
       } else {
         try {
           queuedSelfImprovementRun = await enqueueSelfImprovementRun(pool, {
@@ -1772,12 +1948,14 @@ app.post("/api/chat", requireAuth, async (req, res) => {
             capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade; não será criada outra.";
           } else {
             console.error("Falha ao enfileirar solicitação de capacidade:", error?.name || "Error");
-            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Não prometa alteração de código.";
+            await persistCapabilityRunOutcome(activeCapability.id, { runState: "failed", errorCode: "queue_failed" }).catch(() => {});
+            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: a fila falhou e a capacidade foi marcada como bloqueada. Não prometa alteração de código.";
           }
         }
       }
     } else {
-      capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: falta configuração segura de geração/publicação. Não prometa gerar ou publicar uma atualização.";
+      await persistCapabilityRunOutcome(activeCapability.id, { runState: "failed", errorCode: "pipeline_disabled" }).catch(() => {});
+      capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: falta configuração segura de geração/publicação; a capacidade foi marcada como bloqueada. Não prometa gerar ou publicar uma atualização.";
     }
   }
   if (universalTaskId) {
@@ -1947,10 +2125,13 @@ app.use((error, _req, res, _next) => {
   return res.status(500).json({ error: "Erro interno do servidor." });
 });
 
-// Inicializa o schema persistente no cold start, sem depender da primeira
-// mensagem do usuário ou de uma chamada pública ao endpoint de saúde.
-void initializeDatabase().catch((error) => {
-  console.error("Falha ao inicializar banco de dados na inicialização:", safeDatabaseError(error));
+// Inicializa o schema e reconcilia capacidades antigas em researching no cold start.
+const startupInitialization = initializeDatabase()
+  .then(() => reconcileStaleCapabilities())
+  .then(() => reconcileStaleUniversalTasks());
+
+void startupInitialization.catch((error) => {
+  console.error("Falha ao inicializar ou reconciliar o banco de dados:", safeDatabaseError(error));
 });
 
 let selfImprovementWorker = null;
@@ -1964,7 +2145,7 @@ if (process.env.JARVIS_GITHUB_ACCESS_DIAGNOSTICS === "true") {
   });
 }
 if (selfImprovementPipelineEnabled()) {
-  void initializeDatabase().then(() => {
+  void startupInitialization.then(() => {
     selfImprovementWorker = startSelfImprovementWorker({ pool, processRun: processSelfImprovementRun, onFailure: handleSelfImprovementRunFailure, onWorkerError: (error) => console.error(`Worker de autoaperfeiçoamento indisponível (${error?.name || "Error"}).`) });
   }).catch((error) => console.error(`Worker de autoaperfeiçoamento não iniciou (${error?.name || "Error"}).`));
 }

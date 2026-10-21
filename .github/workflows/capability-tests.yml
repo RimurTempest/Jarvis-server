@@ -51,11 +51,15 @@ jobs:
           node --check jarvis-capabilities/capability-validation-policy.mjs
           node --check jarvis-capabilities/capability-evidence-attestation.mjs
           node --check jarvis-capabilities/learning-intent.mjs
+          node --check jarvis-capabilities/explicit-learning.mjs
+          node --check jarvis-capabilities/test/explicit-learning.test.mjs
           node --check jarvis-capabilities/capability-intent-classifier.mjs
           node --check jarvis-capabilities/android-action-protocol.mjs
           node --check jarvis-capabilities/android-device-auth.mjs
           node --check jarvis-capabilities/action-delivery.mjs
           node --check jarvis-capabilities/postgres-action-queue.mjs
+          node --check jarvis-capabilities/universal-task-android-adapters.mjs
+          node --check jarvis-capabilities/test/universal-task-android-adapters.test.mjs
           node --check jarvis-capabilities/android-action-routes.mjs
           node --check jarvis-capabilities/test/capability-registry.test.mjs
           node --check jarvis-capabilities/test/capability-validation-policy.test.mjs
@@ -81,8 +85,16 @@ jobs:
           node --check jarvis-capabilities/test/self-improvement-readiness.test.mjs
           node --check jarvis-capabilities/self-improvement-target.mjs
           node --check jarvis-capabilities/self-improvement-worker.mjs
+          node --check jarvis-capabilities/self-improvement-capability-sync.mjs
+          node --check jarvis-capabilities/test/self-improvement-capability-sync.test.mjs
+          node --check jarvis-capabilities/test/self-improvement-capability-recovery.integration.test.mjs
           node --check jarvis-capabilities/universal-capability-execution.mjs
+          node --check jarvis-capabilities/universal-task-orchestrator.mjs
+          node --check jarvis-capabilities/test/universal-task-orchestrator.test.mjs
+          node --check jarvis-capabilities/test/universal-capability-execution.test.mjs
           node --check jarvis-capabilities/universal-task-store.mjs
+          node --check jarvis-capabilities/universal-task-recovery.mjs
+          node --check jarvis-capabilities/test/universal-task-recovery.test.mjs
       - name: Run capability tests
         run: |
           node --test jarvis-capabilities/test/provider-failover-policy.test.mjs
@@ -91,11 +103,13 @@ jobs:
           node --test jarvis-capabilities/test/capability-validation-policy.test.mjs
           node --test jarvis-capabilities/test/capability-evidence-attestation.test.mjs
           node --test jarvis-capabilities/test/learning-intent.test.mjs
+          node --test jarvis-capabilities/test/explicit-learning.test.mjs
           node --test jarvis-capabilities/test/capability-intent-classifier.test.mjs
           node --test jarvis-capabilities/test/android-action-protocol.test.mjs
           node --test jarvis-capabilities/test/android-device-auth.test.mjs
           node --test jarvis-capabilities/test/action-delivery.test.mjs
           node --test jarvis-capabilities/test/postgres-action-queue.test.mjs
+          node --test jarvis-capabilities/test/universal-task-android-adapters.test.mjs
           node --test jarvis-capabilities/test/android-action-routes.test.mjs
           node --test jarvis-capabilities/test/secret-scanner.test.mjs
           node --test jarvis-capabilities/test/self-improvement-auto-activation.test.mjs
@@ -112,5 +126,9 @@ jobs:
           node --test jarvis-capabilities/test/self-improvement-server.integration.test.mjs
           node --test jarvis-capabilities/test/self-improvement-target.test.mjs
           node --test jarvis-capabilities/test/self-improvement-worker.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-capability-sync.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-capability-recovery.integration.test.mjs
           node --test jarvis-capabilities/test/universal-capability-execution.test.mjs
+          node --test jarvis-capabilities/test/universal-task-orchestrator.test.mjs
           node --test jarvis-capabilities/test/universal-task-store.test.mjs
+          node --test jarvis-capabilities/test/universal-task-recovery.test.mjs

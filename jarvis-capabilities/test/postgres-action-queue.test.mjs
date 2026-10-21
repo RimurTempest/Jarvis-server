@@ -14,7 +14,7 @@ function fakePool({ selectedRow = null } = {}) {
     async query(sql, params = []) {
       const normalized = sql.replace(/\s+/g, " ").trim();
       calls.push({ sql: normalized, params });
-      if (normalized.startsWith("SELECT id, capability_id, action, requires_user_confirmation, expires_at, delivery_attempts")) {
+      if (normalized.startsWith("SELECT id, capability_id, action, target_device_id, requires_user_confirmation, expires_at, delivery_attempts")) {
         return { rowCount: selectedRow ? 1 : 0, rows: selectedRow ? [{ ...selectedRow }] : [] };
       }
       if (normalized.startsWith("UPDATE jarvis_action_queue SET state = 'delivered'")) {
@@ -56,6 +56,7 @@ test("initializes the queue table and indexes", async () => {
   const pool = fakePool();
   await initializeActionQueue(pool);
   assert.ok(pool.calls.some((call) => call.sql.includes("CREATE TABLE IF NOT EXISTS jarvis_action_queue")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("ADD COLUMN IF NOT EXISTS target_device_id")));
   assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_pending")));
   assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_lease")));
 });
@@ -66,11 +67,14 @@ test("enqueues only structured allowlisted action data", async () => {
     id: "action-01",
     capabilityId: "capability-01",
     action: { type: "copy_text", text: "hello" },
+    targetDeviceId: "android-primary",
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   });
   assert.equal(result.state, "pending");
   assert.equal(result.action.text, "hello");
   assert.equal(pool.calls.length, 1);
+  assert.ok(pool.calls[0].sql.includes("target_device_id"));
+  assert.equal(pool.calls[0].params[3], "android-primary");
   await assert.rejects(() => enqueueAndroidAction(pool, {
     id: "action-02",
     capabilityId: "capability-01",
@@ -84,6 +88,7 @@ test("claims pending actions in a transaction and returns a lease token", async 
       id: "action-01",
       capability_id: "capability-01",
       action: { type: "copy_text", text: "hello" },
+      target_device_id: "android-primary",
       requires_user_confirmation: false,
       expires_at: new Date(Date.now() + 120_000),
       delivery_attempts: 0,
