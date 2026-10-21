@@ -150,27 +150,48 @@ export async function runPersistedUniversalTask({
     return { status: "succeeded", taskId: task.id, summary: "Tarefa concluída e verificada." };
   }
 
-  const failedState = result?.status === "unverified" ? "blocked" : "failed";
-  await transitionUniversalTaskRecord(pool, {
-    id: task.id,
-    state: failedState,
-    summary: result?.status === "unverified"
-      ? "A execução não pôde ser verificada; tarefa bloqueada."
-      : "A execução não foi concluída; tarefa marcada como falha.",
-    blocker: result?.reason ?? "execution_not_succeeded",
-  });
-  await persistUniversalTaskArtifacts(pool, {
-    id: task.id,
-    expectedState: failedState,
+  const unverified = result?.status === "unverified";
+  const evidence = {
     execution: {
-      status: result?.status === "unverified" ? "unverified" : "failed",
+      status: unverified ? "unverified" : "failed",
       reason: result?.reason ?? "execution_not_succeeded",
       completedSteps: Array.isArray(result?.completedSteps) ? result.completedSteps : [],
     },
     verification: verificationSummary(result),
-  });
+  };
+  if (unverified) {
+    await transitionUniversalTaskRecord(pool, {
+      id: task.id,
+      state: "verifying",
+      summary: "A execução terminou, mas a evidência ainda não confirma o resultado.",
+      blocker: result?.reason ?? "verification_not_succeeded",
+    });
+    await persistUniversalTaskArtifacts(pool, {
+      id: task.id,
+      expectedState: "verifying",
+      ...evidence,
+    });
+    await transitionUniversalTaskRecord(pool, {
+      id: task.id,
+      state: "blocked",
+      summary: "A execução não pôde ser verificada; tarefa bloqueada.",
+      blocker: result?.reason ?? "verification_not_succeeded",
+    });
+  } else {
+    await transitionUniversalTaskRecord(pool, {
+      id: task.id,
+      state: "failed",
+      summary: "A execução não foi concluída; tarefa marcada como falha.",
+      blocker: result?.reason ?? "execution_not_succeeded",
+    });
+    await persistUniversalTaskArtifacts(pool, {
+      id: task.id,
+      expectedState: "failed",
+      ...evidence,
+    });
+  }
   return {
-    status: result?.status === "unverified" ? "unverified" : "failed",
+    status: unverified ? "unverified" : "failed",
     reason: result?.reason ?? "execution_not_succeeded",
     taskId: task.id,
   };
