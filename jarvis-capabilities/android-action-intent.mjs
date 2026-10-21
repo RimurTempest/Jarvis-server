@@ -58,7 +58,7 @@ export function resolveAndroidActionIntent(message) {
     return null;
   }
 
-  const settingMatch = /^(?:por favor )?(?:abra|abrir|abre|acesse|acessar|entre em|ir para|va para)\s+(?:as?\s+)?(?:configuracoes?\s+(?:de\s+)?|ajustes\s+(?:de\s+)?)(.+)$/.exec(text);
+  const settingMatch = /^(?:por favor )?(?:abra|abrir|abre|acesse|acessar|entre em|ir para|va para)\s+(?:as?\s+)?(?:configurac(?:ao|oes)\s+(?:de\s+)?|ajustes\s+(?:de\s+)?)(.+)$/.exec(text);
   if (settingMatch) {
     const settingName = settingMatch[1].trim();
     const setting = SETTINGS.get(settingName);
