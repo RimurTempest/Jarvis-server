@@ -49,9 +49,15 @@ export function resolveCapabilityRunOutcome(current, outcome = {}) {
   const pullRequestNumber = Number.isSafeInteger(outcome.pullRequestNumber) && outcome.pullRequestNumber > 0
     ? outcome.pullRequestNumber
     : null;
-  const pullRequestUrl = typeof outcome.pullRequestUrl === "string" && outcome.pullRequestUrl.startsWith("https://github.com/")
-    ? outcome.pullRequestUrl.slice(0, 2048)
-    : null;
+  let pullRequestUrl = null;
+  if (typeof outcome.pullRequestUrl === "string") {
+    try {
+      const url = new URL(outcome.pullRequestUrl);
+      if (url.protocol === "https:" && url.hostname === "github.com" && !url.username && !url.password) {
+        pullRequestUrl = url.toString().slice(0, 2048);
+      }
+    } catch {}
+  }
   const summary = typeof outcome.summary === "string" && outcome.summary.trim()
     ? outcome.summary.trim().slice(0, 1800)
     : "Proposta de implementação preparada e aguardando revisão.";
