@@ -40,7 +40,7 @@ function normalizeStepParameters(value, index) {
     const entries = Object.entries(item);
     if (entries.length > 100) throw new RangeError("Objeto de parâmetros muito grande.");
     for (const [key, child] of entries) {
-      if (["__proto__", "prototype", "constructor", "code", "script", "shell", "javascript", "eval"].includes(key.toLowerCase())) {
+      if (["__proto__", "prototype", "constructor", "code", "script", "shell", "command", "javascript", "eval"].includes(key.toLowerCase())) {
         throw new TypeError("Chave de parâmetro não permitida.");
       }
       visit(child, depth + 1);
