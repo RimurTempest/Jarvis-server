@@ -16,6 +16,16 @@ const TRANSITIONS = {
   completed:[], blocked:["researching","planning","implementing"], failed:["researching","planning","implementing"]
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SECRET_PATTERN = /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|credential|authorization|password|senha|secret|chave(?:\\s+de\\s+acesso)?)\\s*[:=]\\s*[^\\s,;]+|\\bBearer\\s+[a-z0-9._-]{12,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
+
+function normalizeArtifact(value, field) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(field + " deve ser um objeto estruturado.");
+  let serialized;
+  try { serialized = JSON.stringify(value); } catch { throw new TypeError(field + " não pode ser serializado."); }
+  if (typeof serialized !== "string" || serialized.length > 64_000) throw new RangeError(field + " excede o limite de armazenamento.");
+  if (SECRET_PATTERN.test(serialized)) throw new TypeError(field + " parece conter credenciais; conteúdo recusado.");
+  return serialized;
+}
 
 export async function initializeUniversalTaskStore(pool) {
   if (!pool || typeof pool.query !== "function") throw new TypeError("Pool PostgreSQL inválido.");
@@ -31,6 +41,9 @@ export async function initializeUniversalTaskStore(pool) {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
+  await pool.query("ALTER TABLE jarvis_universal_tasks ADD COLUMN IF NOT EXISTS plan JSONB");
+  await pool.query("ALTER TABLE jarvis_universal_tasks ADD COLUMN IF NOT EXISTS execution JSONB");
+  await pool.query("ALTER TABLE jarvis_universal_tasks ADD COLUMN IF NOT EXISTS verification JSONB");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_universal_tasks_capability_updated ON jarvis_universal_tasks (capability_id, updated_at DESC)");
 }
 
@@ -69,6 +82,40 @@ export async function transitionUniversalTaskRecord(pool, { id, state, summary =
 
 export async function getUniversalTaskRecord(pool, id) {
   if (typeof id !== "string" || !UUID.test(id)) throw new TypeError("id inválido.");
-  const result = await pool.query("SELECT id, capability_id, run_id, goal, state, summary, blocker, created_at, updated_at FROM jarvis_universal_tasks WHERE id = $1", [id]);
+  const result = await pool.query("SELECT id, capability_id, run_id, goal, state, summary, blocker, plan, execution, verification, created_at, updated_at FROM jarvis_universal_tasks WHERE id = $1", [id]);
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Persist structured planning/execution artifacts without changing the task state.
+ * expectedState is a compare-and-swap guard so stale workers cannot attach evidence
+ * to a task that has already moved to another stage.
+ */
+export async function persistUniversalTaskArtifacts(pool, { id, expectedState, plan, execution, verification }) {
+  if (typeof id !== "string" || !UUID.test(id)) throw new TypeError("id inválido.");
+  if (!STATES.has(expectedState)) throw new TypeError("expectedState inválido.");
+  const values = {
+    plan: plan === undefined ? null : normalizeArtifact(plan, "plan"),
+    execution: execution === undefined ? null : normalizeArtifact(execution, "execution"),
+    verification: verification === undefined ? null : normalizeArtifact(verification, "verification"),
+  };
+  if (values.plan === null && values.execution === null && values.verification === null) {
+    throw new TypeError("Informe ao menos um artefato para persistir.");
+  }
+  const result = await pool.query(
+    `UPDATE jarvis_universal_tasks
+     SET plan = COALESCE($2::jsonb, plan),
+         execution = COALESCE($3::jsonb, execution),
+         verification = COALESCE($4::jsonb, verification),
+         updated_at = NOW()
+     WHERE id = $1 AND state = $5
+     RETURNING id, capability_id, run_id, goal, state, summary, blocker, plan, execution, verification, created_at, updated_at`,
+    [id, values.plan, values.execution, values.verification, expectedState],
+  );
+  if (!result.rowCount) {
+    const exists = await pool.query("SELECT state FROM jarvis_universal_tasks WHERE id = $1", [id]);
+    if (!exists.rowCount) return null;
+    throw new Error("Estado da tarefa mudou antes de persistir os artefatos; recarregue e tente novamente.");
+  }
   return result.rows[0] ?? null;
 }
