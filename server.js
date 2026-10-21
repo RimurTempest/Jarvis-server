@@ -22,6 +22,9 @@ import { mergeValidatedSelfImprovementDraft } from "./jarvis-capabilities/self-i
 import { resolveRuntimeHealthUrl, verifyRuntimeRevision, revertMergedCommitSafely, isSelfImprovementAutoMergeConfigured } from "./jarvis-capabilities/self-improvement-runtime-guard.mjs";
 import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarvis-capabilities/self-improvement-target.mjs";
 import { initializeUniversalTaskStore, createUniversalTaskRecord, transitionUniversalTaskRecord, getUniversalTaskRecord } from "./jarvis-capabilities/universal-task-store.mjs";
+import { runPersistedUniversalTask } from "./jarvis-capabilities/universal-task-orchestrator.mjs";
+import { createAndroidUniversalAdapterRegistry } from "./jarvis-capabilities/universal-task-android-adapters.mjs";
+import { initializeAndroidDeviceRegistry } from "./jarvis-capabilities/android-device-registry.mjs";
 import { getSelfImprovementReadiness } from "./jarvis-capabilities/self-improvement-readiness.mjs";
 import { resolveUniversalTaskRecovery } from "./jarvis-capabilities/universal-task-recovery.mjs";
 import { shouldShowSources } from "./jarvis-capabilities/source-display-policy.mjs";
@@ -1512,6 +1515,73 @@ app.get("/api/tasks/:id", requireAuth, async (req, res) => {
     if (error instanceof TypeError) return res.status(400).json({ error: "ID de tarefa inválido." });
     console.error("Falha ao consultar tarefa universal:", error?.name || "Error");
     return res.status(503).json({ error: "Não foi possível consultar o estado da tarefa." });
+  }
+});
+
+app.post("/api/tasks/:id/execute", requireAuth, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  const id = typeof req.params.id === "string" ? req.params.id : "";
+  const deviceId = typeof req.body?.deviceId === "string" ? req.body.deviceId : "";
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body) ||
+      !req.body.plan || typeof req.body.plan !== "object" || Array.isArray(req.body.plan) ||
+      req.body.confirmed !== true || !deviceId) {
+    return res.status(400).json({
+      error: "Informe um plano estruturado, o dispositivo pareado e a confirmação explícita da execução.",
+    });
+  }
+
+  try {
+    await initializeDatabase();
+    const task = await getUniversalTaskRecord(pool, id);
+    if (!task) return res.status(404).json({ error: "Tarefa não encontrada." });
+    if (!["planning", "awaiting_approval"].includes(task.state)) {
+      return res.status(409).json({
+        error: "A tarefa não está em um estado autorizado para execução.",
+        state: task.state,
+      });
+    }
+
+    await initializeAndroidDeviceRegistry(pool);
+    const enrolledDevice = await pool.query(
+      "SELECT device_id FROM jarvis_android_devices WHERE device_id = $1 AND revoked_at IS NULL",
+      [deviceId],
+    );
+    if (!enrolledDevice.rowCount) {
+      return res.status(403).json({ error: "O dispositivo selecionado não está pareado ou foi revogado." });
+    }
+
+    const publicBaseUrl = process.env.JARVIS_PUBLIC_URL || process.env.RENDER_EXTERNAL_URL;
+    let adapterRegistry;
+    try {
+      adapterRegistry = createAndroidUniversalAdapterRegistry({ pool, publicBaseUrl });
+    } catch {
+      return res.status(503).json({ error: "A URL pública HTTPS necessária para verificar a execução não está configurada." });
+    }
+
+    const outcome = await runPersistedUniversalTask({
+      pool,
+      task,
+      plan: req.body.plan,
+      adapterRegistry,
+      authorization: {
+        confirmed: req.body.confirmed === true,
+        grantedPermissions: [],
+        securityReviewPassed: false,
+      },
+      context: { deviceId, androidActionIds: new Map() },
+    });
+    const updated = await getUniversalTaskRecord(pool, id);
+    const statusCode = outcome.status === "succeeded" ? 200
+      : outcome.status === "needs_user_action" ? 409
+        : outcome.status === "unverified" ? 502 : 502;
+    return res.status(statusCode).json({ outcome, task: updated });
+  } catch (error) {
+    if (error instanceof TypeError || error instanceof RangeError) {
+      return res.status(400).json({ error: "Plano ou parâmetros da tarefa inválidos." });
+    }
+    console.error("Falha na execução universal Android:", error?.name || "Error");
+    return res.status(503).json({ error: "Não foi possível concluir e verificar a execução da tarefa." });
   }
 });
 
