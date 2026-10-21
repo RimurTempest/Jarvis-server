@@ -128,3 +128,31 @@ test("rejects secret-bearing and executable-code step parameters", () => {
     ...base, steps: [{ kind: "server.echo", description: "Etapa", parameters: ["not", "an", "object"] }],
   }), /objeto estruturado/);
 });
+
+test("passes normalized structured parameters only to the registered adapter", async () => {
+  let received = null;
+  const actionPlan = plan({
+    requiredPermissions: [],
+    requiresConfirmation: false,
+    steps: [{
+      kind: "email.send",
+      description: "Enviar relatório",
+      reversible: false,
+      parameters: { to: ["recipient@example.com"], subject: "Relatório", body: "Segue anexo." },
+    }],
+  });
+  const registry = new Map([["email.send", {
+    target: "external_service",
+    execute: async ({ step }) => {
+      received = step.parameters;
+      return { status: "succeeded", summary: "Provedor aceitou a solicitação.", evidence: "https://provider.example/message/2" };
+    },
+    verify: async () => ({ status: "succeeded", summary: "Mensagem localizada.", evidence: "https://provider.example/message/2" }),
+  }]]);
+  const result = await executeUniversalTask({
+    task: task(), plan: actionPlan, adapterRegistry: registry,
+    authorization: { confirmed: true, grantedPermissions: [] },
+  });
+  assert.equal(result.status, "succeeded");
+  assert.deepEqual(received, { to: ["recipient@example.com"], subject: "Relatório", body: "Segue anexo." });
+});
