@@ -16,7 +16,7 @@ const TRANSITIONS = {
   completed:[], blocked:["researching","planning","implementing"], failed:["researching","planning","implementing"]
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SECRET_PATTERN = /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|credential|authorization|password|senha|secret|chave(?:\\s+de\\s+acesso)?)\\s*[:=]\\s*[^\\s,;]+|\\bBearer\\s+[a-z0-9._-]{12,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
+const SECRET_PATTERN = /(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|credential|authorization|password|senha|secret|chave(?:\s+de\s+acesso)?)\s*["']?\s*[:=]\s*["']?[^\s,;"']+|\bBearer\s+[a-z0-9._-]{12,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
 
 function normalizeArtifact(value, field) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(field + " deve ser um objeto estruturado.");
