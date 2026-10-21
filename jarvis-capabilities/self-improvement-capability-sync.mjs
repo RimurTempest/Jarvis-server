@@ -43,6 +43,9 @@ export function resolveCapabilityRunOutcome(current, outcome = {}) {
   }
 
   const sourceRevision = outcome.sourceRevision;
+  if (typeof sourceRevision !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sourceRevision)) {
+    throw new TypeError("sourceRevision deve ser um SHA completo para registrar uma proposta preparada.");
+  }
   const changedPaths = Array.isArray(outcome.changedPaths)
     ? outcome.changedPaths.filter((path) => typeof path === "string" && path.trim()).slice(0, 50).map((path) => path.slice(0, 500))
     : [];
