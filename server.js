@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext, runProvidersSequentially } from "./jarvis-capabilities/provider-failover-policy.mjs";
 import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
+import { detectExplicitLearning } from "./jarvis-capabilities/explicit-learning.mjs";
 import { parseCapabilityIntentClassification, shouldClassifyCapabilityIntent } from "./jarvis-capabilities/capability-intent-classifier.mjs";
 import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
 import { registerAndroidActionRoutes } from "./jarvis-capabilities/android-action-routes.mjs";
@@ -432,44 +433,6 @@ async function recordLearningEvent(eventType, summary, details = {}, sourceMessa
      VALUES ($1, $2, $3::jsonb, $4)`,
     [String(eventType).slice(0, 60), cleanSummary, JSON.stringify(details ?? {}), sourceMessageId]
   );
-}
-
-function detectExplicitLearning(message) {
-  const raw = String(message ?? "").trim();
-  const normalized = normalizeText(raw);
-  if (!raw || raw.length > MAX_AUTO_MEMORY_LENGTH) return null;
-  // Uma intenção de aprender uma capacidade pertence ao registro de capacidades,
-  // não deve ser memorizada incorretamente como preferência pessoal.
-  if (detectCapabilityLearningRequest(raw)) return null;
-  // Nunca captura automaticamente credenciais ou números que pareçam documentos/cartões.
-  if (looksSensitive(raw) || /\b(cpf|rg|cartao de credito|cartão de crédito|cvv|codigo de seguranca|código de segurança|seed phrase|frase de recuperacao|frase de recuperação)\b/i.test(raw)) return null;
-
-  const preferencePatterns = [
-    /\b(prefiro|minha preferencia e|minha preferência é)\b/i,
-    /\b(me chame de|quero ser chamado de|quero que me chame de)\b/i,
-    /\b(daqui em diante|de agora em diante|sempre faça|sempre faca|sempre responda|não altere|nao altere)\b/i,
-    /\b(quero que você sempre|quero que voce sempre|não quero que você|nao quero que voce)\b/i,
-    /\b(quero que você (?:entenda|interprete|responda|se lembre|mantenha|considere|evite|priorize)|quero que voce (?:entenda|interprete|responda|se lembre|mantenha|considere|evite|priorize)|a partir de agora|quando eu pedir|quando eu solicitar|nas próximas conversas|nas proximas conversas)\b/i,
-  ];
-  if (preferencePatterns.some((pattern) => pattern.test(raw)) && normalized.length >= 10) {
-    return { type: "explicit_preference", category: "preferencia", content: raw, confidence: 0.95 };
-  }
-
-  const correctionPatterns = [
-    /^corrigindo[: ,]/i,
-    /^correção[: ,]/i,
-    /^correcao[: ,]/i,
-    /^na verdade[, :]/i,
-    /^isso está errado[, :]/i,
-    /^isso esta errado[, :]/i,
-    /^você entendeu errado[, :]/i,
-    /^voce entendeu errado[, :]/i,
-    /\b(não foi isso que eu pedi|nao foi isso que eu pedi|não foi isso que eu quis dizer|nao foi isso que eu quis dizer|o que eu quis dizer foi|minha intenção era|minha intencao era)\b/i,
-  ];
-  if (correctionPatterns.some((pattern) => pattern.test(raw))) {
-    return { type: "user_correction", category: null, content: raw, confidence: 0.8 };
-  }
-  return null;
 }
 
 async function captureExplicitLearning(message, userMessageId) {
