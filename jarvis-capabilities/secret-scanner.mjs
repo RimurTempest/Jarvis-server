@@ -15,7 +15,13 @@ export function containsLikelySecret(content) {
     let match;
     while ((match = pattern.exec(content)) !== null) {
       const value = String(match[1] ?? "").trim();
-      if (value.length >= 12 && !isPlaceholder(value)) return true;
+      // Bare-assignment detection must not mistake JavaScript expressions such as
+      // tokenInput.value.trim() or crypto.randomUUID() for hard-coded credentials.
+      // Quoted assignments and known credential formats remain checked above.
+      const nextCharacter = content[pattern.lastIndex] ?? "";
+      const looksLikeCodeReference = nextCharacter === "(" &&
+        /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/.test(value);
+      if (value.length >= 12 && !isPlaceholder(value) && !looksLikeCodeReference) return true;
     }
   }
   return false;
