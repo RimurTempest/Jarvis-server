@@ -34,10 +34,10 @@ export function detectExplicitLearning(message) {
   const preferencePatterns = [
     /\b(prefiro|minha preferencia e|minha preferência é)\b/i,
     /\b(me chame de|quero ser chamado de|quero que me chame de)\b/i,
-    /\b(daqui em diante|de agora em diante|sempre faça|sempre faca|sempre responda|não altere|nao altere)\b/i,
+    /\b(sempre faça|sempre faca|sempre responda|não altere|nao altere)\b/i,
     /\b(quero que você sempre|quero que voce sempre|não quero que você|nao quero que voce)\b/i,
     /\b(quero que você (?:entenda|interprete|responda|se lembre|mantenha|considere|evite|priorize)|quero que voce (?:entenda|interprete|responda|se lembre|mantenha|considere|evite|priorize))\b/i,
-    /\b(?:a partir de agora|quando eu pedir|quando eu solicitar|nas próximas conversas|nas proximas conversas)\b.{0,100}\b(?:quero|preciso|prefiro|entenda|interprete|responda|considere|evite|priorize|pesquise|lembre)\b/i,
+    /\b(?:a partir de agora|daqui em diante|de agora em diante|quando eu pedir|quando eu solicitar|nas próximas conversas|nas proximas conversas)\b.{0,100}\b(?:quero|preciso|prefiro|entenda|interprete|responda|considere|evite|priorize|pesquise|lembre)\b/i,
   ];
   if (preferencePatterns.some((pattern) => pattern.test(raw)) && normalized.length >= 10) {
     return { type: "explicit_preference", category: "preferencia", content: raw, confidence: 0.95 };
