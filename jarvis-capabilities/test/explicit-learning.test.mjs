@@ -17,6 +17,7 @@ test("captures corrections as feedback without promoting them to permanent facts
 test("does not treat a one-off action as a persistent preference", () => {
   assert.equal(detectExplicitLearning("Abra o WhatsApp."), null);
   assert.equal(detectExplicitLearning("A partir de agora, abra o WhatsApp."), null);
+  assert.equal(detectExplicitLearning("Daqui em diante, abra o WhatsApp."), null);
 });
 
 test("routes capability learning requests to the capability-learning pipeline", () => {
