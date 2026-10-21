@@ -4,6 +4,7 @@ import {
   createUniversalTaskRecord,
   getUniversalTaskRecord,
   initializeUniversalTaskStore,
+  persistUniversalTaskArtifacts,
   transitionUniversalTaskRecord,
 } from "../universal-task-store.mjs";
 
@@ -14,9 +15,9 @@ function fakePool() {
   return {
     records,
     async query(sql, params = []) {
-      if (sql.startsWith("CREATE TABLE") || sql.startsWith("CREATE INDEX")) return { rowCount: 0, rows: [] };
+      if (sql.startsWith("CREATE TABLE") || sql.startsWith("CREATE INDEX") || sql.startsWith("ALTER TABLE")) return { rowCount: 0, rows: [] };
       if (sql.startsWith("INSERT INTO jarvis_universal_tasks")) {
-        const row = { id: params[0], capability_id: params[1], run_id: null, original_request: params[2], goal: params[3], state: "received", summary: null, blocker: null, created_at: new Date(), updated_at: new Date() };
+        const row = { id: params[0], capability_id: params[1], run_id: null, original_request: params[2], goal: params[3], state: "received", summary: null, blocker: null, plan: null, execution: null, verification: null, created_at: new Date(), updated_at: new Date() };
         records.set(row.id, row);
         return { rowCount: 1, rows: [{ ...row }] };
       }
@@ -27,6 +28,15 @@ function fakePool() {
       if (sql.startsWith("SELECT id, capability_id, run_id, goal, state")) {
         const row = records.get(params[0]);
         return { rowCount: row ? 1 : 0, rows: row ? [{ ...row, original_request: undefined }] : [] };
+      }
+      if (sql.startsWith("UPDATE jarvis_universal_tasks") && sql.includes("SET plan = COALESCE")) {
+        const row = records.get(params[0]);
+        if (!row || row.state !== params[4]) return { rowCount: 0, rows: [] };
+        if (params[1] !== null) row.plan = JSON.parse(params[1]);
+        if (params[2] !== null) row.execution = JSON.parse(params[2]);
+        if (params[3] !== null) row.verification = JSON.parse(params[3]);
+        row.updated_at = new Date();
+        return { rowCount: 1, rows: [{ ...row }] };
       }
       if (sql.startsWith("UPDATE jarvis_universal_tasks")) {
         const row = records.get(params[0]);
@@ -46,9 +56,12 @@ function fakePool() {
 test("initializes persistent task storage and indexes", async () => {
   const calls = [];
   await initializeUniversalTaskStore({ query: async (sql) => { calls.push(sql); return { rows: [] }; } });
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 5);
   assert.match(calls[0], /jarvis_universal_tasks/);
-  assert.match(calls[1], /idx_jarvis_universal_tasks/);
+  assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS plan JSONB/.test(sql)));
+  assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS execution JSONB/.test(sql)));
+  assert.ok(calls.some((sql) => /ADD COLUMN IF NOT EXISTS verification JSONB/.test(sql)));
+  assert.ok(calls.some((sql) => /idx_jarvis_universal_tasks/.test(sql)));
 });
 
 test("records a natural-language request without claiming it ran", async () => {
@@ -120,4 +133,34 @@ test("uses compare-and-swap so a stale concurrent transition cannot overwrite ne
     /Estado da tarefa mudou durante a transição/,
   );
   assert.equal(pool.records.get(id).state, "planning");
+});
+
+test("persists a structured plan and execution evidence only while the expected state is current", async () => {
+  const pool = fakePool();
+  await createUniversalTaskRecord(pool, { id, originalRequest: "Abra uma tela permitida", goal: "Abrir configurações de Bluetooth" });
+  await transitionUniversalTaskRecord(pool, { id, state: "planning", summary: "Plano em preparação." });
+  const plan = { target: "android", riskLevel: "low", steps: [{ kind: "android.open_settings", parameters: { setting: "bluetooth" } }] };
+  const execution = { status: "succeeded", summary: "O dispositivo confirmou a ação." };
+  const saved = await persistUniversalTaskArtifacts(pool, { id, expectedState: "planning", plan, execution });
+  assert.deepEqual(saved.plan, plan);
+  assert.deepEqual(saved.execution, execution);
+  assert.equal(saved.verification, null);
+  const loaded = await getUniversalTaskRecord(pool, id);
+  assert.deepEqual(loaded.plan, plan);
+  assert.deepEqual(loaded.execution, execution);
+  await transitionUniversalTaskRecord(pool, { id, state: "awaiting_approval", summary: "Aguardando aprovação." });
+  await assert.rejects(
+    () => persistUniversalTaskArtifacts(pool, { id, expectedState: "planning", verification: { status: "succeeded" } }),
+    /Estado da tarefa mudou/,
+  );
+});
+
+test("rejects empty and credential-bearing task artifacts", async () => {
+  const pool = fakePool();
+  await createUniversalTaskRecord(pool, { id, originalRequest: "Prepare uma tarefa", goal: "Preparar tarefa" });
+  await assert.rejects(() => persistUniversalTaskArtifacts(pool, { id, expectedState: "received" }), /ao menos um artefato/);
+  await assert.rejects(
+    () => persistUniversalTaskArtifacts(pool, { id, expectedState: "received", execution: { status: "succeeded", access_token: "secret-value" } }),
+    /credenciais/,
+  );
 });
