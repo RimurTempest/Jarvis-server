@@ -1142,6 +1142,7 @@ async function processSelfImprovementRun(run) {
 }
 
 async function handleSelfImprovementRunFailure(run, error) {
+  let safeFailureCode = "pipeline_failed";
   try {
     const current = await pool.query(
       `SELECT state, base_revision AS "baseRevision", head_revision AS "headRevision",
@@ -1154,6 +1155,7 @@ async function handleSelfImprovementRunFailure(run, error) {
     const currentRun = current.rows[0];
     const state = currentRun?.state;
     if (state === "merged") {
+      safeFailureCode = "runtime_verification_interrupted";
       await updateSelfImprovementRun(pool, run.id, "merge_unverified", {
         baseRevision: currentRun.baseRevision,
         headRevision: currentRun.headRevision,
@@ -1189,6 +1191,7 @@ async function handleSelfImprovementRunFailure(run, error) {
       const errorCode = safeCodes.has(error?.code)
         ? error.code
         : (stageErrorCodes[state] || "pipeline_failed");
+      safeFailureCode = errorCode;
       await updateSelfImprovementRun(pool, run.id, "failed", { errorCode });
       await recordLearningEvent(
         "self_improvement_run_failed",
@@ -1212,7 +1215,7 @@ async function handleSelfImprovementRunFailure(run, error) {
     }).catch(() => {});
   }
   const errorName = typeof error?.name === "string" ? error.name.slice(0, 80) : "Error";
-  console.error(`Execução de autoaperfeiçoamento interrompida (${errorName}); nenhuma implantação foi feita.`);
+  console.error(`Execução de autoaperfeiçoamento interrompida (${errorName}; code=${safeFailureCode}); nenhuma implantação foi feita.`);
 }
 
 app.get("/", (_req, res) => {
