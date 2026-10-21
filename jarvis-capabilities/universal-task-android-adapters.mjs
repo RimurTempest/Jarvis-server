@@ -68,6 +68,7 @@ export function createAndroidUniversalAdapterRegistry({ pool, publicBaseUrl, enq
           id: actionId,
           capabilityId,
           action: buildAction(step.parameters),
+          targetDeviceId: context.deviceId,
         });
         if (!context.androidActionIds || typeof context.androidActionIds.set !== "function") {
           context.androidActionIds = new Map();
