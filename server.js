@@ -25,6 +25,7 @@ import { getSelfImprovementReadiness } from "./jarvis-capabilities/self-improvem
 import { shouldShowSources } from "./jarvis-capabilities/source-display-policy.mjs";
 import { inspectSelfImprovementGitHubAccess } from "./jarvis-capabilities/self-improvement-github-access.mjs";
 import { getSelfImprovementVisualState } from "./jarvis-capabilities/self-improvement-visual-state.mjs";
+import { resolveCapabilityRunOutcome } from "./jarvis-capabilities/self-improvement-capability-sync.mjs";
 
 const { Pool } = pg;
 const app = express();
@@ -827,6 +828,27 @@ async function logSafeGitHubAccessDiagnostics() {
   console.info("JARVIS GitHub access diagnostic:", JSON.stringify(Object.fromEntries(results)));
 }
 
+async function persistCapabilityRunOutcome(capabilityId, outcome) {
+  const selected = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [capabilityId]);
+  if (!selected.rowCount) return null;
+  const current = selected.rows[0].record;
+  const next = resolveCapabilityRunOutcome(current, outcome);
+  if (next === current) return current;
+  const updated = await pool.query(
+    `UPDATE jarvis_capabilities
+     SET goal = $1, state = $2, record = $3::jsonb, updated_at = NOW()
+     WHERE id = $4 AND state = $5 AND record = $6::jsonb
+     RETURNING record`,
+    [next.goal, next.state, JSON.stringify(next), capabilityId, current.state, JSON.stringify(current)],
+  );
+  if (!updated.rowCount) throw new Error("Registro de capacidade alterado em paralelo; sincronização terminal recusada.");
+  await recordLearningEvent("capability_state_changed", next.goal, {
+    capabilityId, previousState: current.state, state: next.state,
+    runId: outcome.runId ?? null, runState: outcome.runState, errorCode: outcome.errorCode ?? null,
+  }).catch(() => {});
+  return updated.rows[0].record;
+}
+
 async function processSelfImprovementRun(run) {
   const selected = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [run.capability_id]);
   if (!selected.rowCount) {
@@ -1076,6 +1098,13 @@ async function processSelfImprovementRun(run) {
       ? { errorCode: runtimeVerificationReason.slice(0, 80) }
       : {}),
   };
+  await persistCapabilityRunOutcome(run.capability_id, {
+    runId: run.id, runState: finalState, summary: finalDraft.summary,
+    sourceCount: finalDraft.sourceCount, sourceRevision: finalDraft.baseRevision,
+    pullRequestNumber: finalDraft.pullRequest.number, pullRequestUrl: finalDraft.pullRequest.url,
+    changedPaths: finalDraft.changedPaths, errorCode: persistedRunMetadata.errorCode,
+  });
+
   if (finalState !== "draft_pr_created") {
     await updateSelfImprovementRun(pool, run.id, finalState, persistedRunMetadata);
   } else {
@@ -1143,6 +1172,7 @@ async function processSelfImprovementRun(run) {
 
 async function handleSelfImprovementRunFailure(run, error) {
   let safeFailureCode = "pipeline_failed";
+  let capabilityOutcomeState = "failed";
   try {
     const current = await pool.query(
       `SELECT state, base_revision AS "baseRevision", head_revision AS "headRevision",
@@ -1154,7 +1184,9 @@ async function handleSelfImprovementRunFailure(run, error) {
     );
     const currentRun = current.rows[0];
     const state = currentRun?.state;
+    capabilityOutcomeState = state || "failed";
     if (state === "merged") {
+      capabilityOutcomeState = "merge_unverified";
       safeFailureCode = "runtime_verification_interrupted";
       await updateSelfImprovementRun(pool, run.id, "merge_unverified", {
         baseRevision: currentRun.baseRevision,
@@ -1192,6 +1224,7 @@ async function handleSelfImprovementRunFailure(run, error) {
         ? error.code
         : (stageErrorCodes[state] || "pipeline_failed");
       safeFailureCode = errorCode;
+      capabilityOutcomeState = "failed";
       await updateSelfImprovementRun(pool, run.id, "failed", { errorCode });
       await recordLearningEvent(
         "self_improvement_run_failed",
@@ -1202,6 +1235,12 @@ async function handleSelfImprovementRunFailure(run, error) {
   } catch {
     // Do not leak provider or repository response details through the worker.
   }
+  await persistCapabilityRunOutcome(run.capability_id, {
+    runId: run.id, runState: capabilityOutcomeState, errorCode: safeFailureCode,
+  }).catch(() => {
+    console.error("Falha ao sincronizar o estado terminal da capacidade.");
+  });
+
   const tasksToBlock = await pool.query(
     "SELECT id FROM jarvis_universal_tasks WHERE run_id = $1 AND state IN ('researching','planning','implementing','testing')",
     [run.id],
@@ -1752,7 +1791,8 @@ app.post("/api/chat", requireAuth, async (req, res) => {
     if (selfImprovementPipelineEnabled()) {
       const target = resolveSelfImprovementTarget(activeCapability.goal);
       if (!target.available) {
-        capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO BLOQUEADO: ${target.reason} Não afirme que o código foi implementado nem que haverá uma atualização pronta.`;
+        await persistCapabilityRunOutcome(activeCapability.id, { runState: "failed", errorCode: "target_unavailable" }).catch(() => {});
+        capabilityContext += `\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO BLOQUEADO: ${target.reason} A capacidade foi marcada como bloqueada. Não afirme que o código foi implementado nem que haverá uma atualização pronta.`;
       } else {
         try {
           queuedSelfImprovementRun = await enqueueSelfImprovementRun(pool, {
@@ -1772,12 +1812,14 @@ app.post("/api/chat", requireAuth, async (req, res) => {
             capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: já existe uma execução ativa para esta capacidade; não será criada outra.";
           } else {
             console.error("Falha ao enfileirar solicitação de capacidade:", error?.name || "Error");
-            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: não foi possível enfileirar a implementação. Não prometa alteração de código.";
+            await persistCapabilityRunOutcome(activeCapability.id, { runState: "failed", errorCode: "queue_failed" }).catch(() => {});
+            capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO: a fila falhou e a capacidade foi marcada como bloqueada. Não prometa alteração de código.";
           }
         }
       }
     } else {
-      capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: falta configuração segura de geração/publicação. Não prometa gerar ou publicar uma atualização.";
+      await persistCapabilityRunOutcome(activeCapability.id, { runState: "failed", errorCode: "pipeline_disabled" }).catch(() => {});
+      capabilityContext += "\n\nPIPELINE DE AUTOAPERFEIÇOAMENTO INDISPONÍVEL: falta configuração segura de geração/publicação; a capacidade foi marcada como bloqueada. Não prometa gerar ou publicar uma atualização.";
     }
   }
   if (universalTaskId) {
