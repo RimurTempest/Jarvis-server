@@ -1177,7 +1177,18 @@ async function handleSelfImprovementRunFailure(run, error) {
         "ci_repair_invalid_draft",
         "ci_validation_not_repairable",
       ]);
-      const errorCode = safeCodes.has(error?.code) ? error.code : "pipeline_failed";
+      // Preserve a safe stage marker so a failed run can be diagnosed without
+      // logging provider responses, GitHub bodies, tokens, or arbitrary errors.
+      const stageErrorCodes = {
+        queued: "pipeline_failed_queued",
+        researching: "pipeline_failed_researching",
+        collecting_context: "pipeline_failed_collecting_context",
+        generating: "pipeline_failed_generating",
+        publishing: "pipeline_failed_publishing",
+      };
+      const errorCode = safeCodes.has(error?.code)
+        ? error.code
+        : (stageErrorCodes[state] || "pipeline_failed");
       await updateSelfImprovementRun(pool, run.id, "failed", { errorCode });
       await recordLearningEvent(
         "self_improvement_run_failed",
