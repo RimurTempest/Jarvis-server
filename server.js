@@ -849,6 +849,74 @@ async function persistCapabilityRunOutcome(capabilityId, outcome) {
   return updated.rows[0].record;
 }
 
+async function reconcileStaleCapabilities() {
+  if (!pool) return 0;
+  const staleAfterMinutes = 10;
+  const result = await pool.query(
+    `SELECT capability.id AS "capabilityId",
+            run.id AS "runId", run.state AS "runState", run.error_code AS "errorCode",
+            run.proposal_summary AS summary, run.head_revision AS "sourceRevision",
+            run.pull_request_number AS "pullRequestNumber", run.pull_request_url AS "pullRequestUrl",
+            run.updated_at AS "runUpdatedAt"
+     FROM jarvis_capabilities AS capability
+     LEFT JOIN LATERAL (
+       SELECT id, state, error_code, proposal_summary, head_revision,
+              pull_request_number, pull_request_url, updated_at
+       FROM jarvis_self_improvement_runs
+       WHERE capability_id = capability.id
+       ORDER BY created_at DESC LIMIT 1
+     ) AS run ON TRUE
+     WHERE capability.state = 'researching'
+       AND capability.updated_at < NOW() - ($1::int * INTERVAL '1 minute')
+       AND (
+         run.id IS NULL
+         OR run.state IN ('draft_pr_created', 'runtime_verified', 'rolled_back', 'merge_unverified', 'failed')
+         OR (run.state = 'merged' AND run.updated_at < NOW() - (($1::int * 2) * INTERVAL '1 minute'))
+       )
+     ORDER BY capability.updated_at ASC
+     LIMIT 100`,
+    [staleAfterMinutes],
+  );
+
+  let reconciled = 0;
+  for (const candidate of result.rows) {
+    let outcome;
+    if (!candidate.runId) {
+      outcome = { runState: "failed", errorCode: "orphaned_researching" };
+    } else {
+      const runState = candidate.runState === "merged" ? "merge_unverified" : candidate.runState;
+      outcome = {
+        runId: candidate.runId,
+        runState,
+        errorCode: candidate.errorCode || (runState === "merge_unverified" ? "runtime_verification_interrupted" : "pipeline_failed"),
+        summary: candidate.summary || "Proposta recuperada de uma execução anterior.",
+        sourceRevision: candidate.sourceRevision,
+        pullRequestNumber: candidate.pullRequestNumber,
+        pullRequestUrl: candidate.pullRequestUrl,
+        changedPaths: [],
+      };
+    }
+
+    try {
+      await persistCapabilityRunOutcome(candidate.capabilityId, outcome);
+      reconciled += 1;
+    } catch {
+      // A malformed terminal record must not stop startup or fabricate validation.
+      try {
+        await persistCapabilityRunOutcome(candidate.capabilityId, {
+          runState: "failed",
+          errorCode: "stale_capability_reconciliation_failed",
+        });
+        reconciled += 1;
+      } catch {
+        console.error("Falha ao reconciliar uma capacidade antiga em researching.");
+      }
+    }
+  }
+  if (reconciled) console.info(`Capacidades antigas reconciliadas: ${reconciled}`);
+  return reconciled;
+}
+
 async function processSelfImprovementRun(run) {
   const selected = await pool.query("SELECT record FROM jarvis_capabilities WHERE id = $1", [run.capability_id]);
   if (!selected.rowCount) {
@@ -1989,10 +2057,12 @@ app.use((error, _req, res, _next) => {
   return res.status(500).json({ error: "Erro interno do servidor." });
 });
 
-// Inicializa o schema persistente no cold start, sem depender da primeira
-// mensagem do usuário ou de uma chamada pública ao endpoint de saúde.
-void initializeDatabase().catch((error) => {
-  console.error("Falha ao inicializar banco de dados na inicialização:", safeDatabaseError(error));
+// Inicializa o schema e reconcilia capacidades antigas em researching no cold start.
+const startupInitialization = initializeDatabase()
+  .then(() => reconcileStaleCapabilities());
+
+void startupInitialization.catch((error) => {
+  console.error("Falha ao inicializar ou reconciliar o banco de dados:", safeDatabaseError(error));
 });
 
 let selfImprovementWorker = null;
@@ -2006,7 +2076,7 @@ if (process.env.JARVIS_GITHUB_ACCESS_DIAGNOSTICS === "true") {
   });
 }
 if (selfImprovementPipelineEnabled()) {
-  void initializeDatabase().then(() => {
+  void startupInitialization.then(() => {
     selfImprovementWorker = startSelfImprovementWorker({ pool, processRun: processSelfImprovementRun, onFailure: handleSelfImprovementRunFailure, onWorkerError: (error) => console.error(`Worker de autoaperfeiçoamento indisponível (${error?.name || "Error"}).`) });
   }).catch((error) => console.error(`Worker de autoaperfeiçoamento não iniciou (${error?.name || "Error"}).`));
 }
