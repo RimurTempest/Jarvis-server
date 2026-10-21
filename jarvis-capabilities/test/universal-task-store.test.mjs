@@ -30,7 +30,7 @@ function fakePool() {
       }
       if (sql.startsWith("UPDATE jarvis_universal_tasks")) {
         const row = records.get(params[0]);
-        if (!row) return { rowCount: 0, rows: [] };
+        if (!row || row.state !== params[5]) return { rowCount: 0, rows: [] };
         row.state = params[1];
         row.summary = params[2] ?? row.summary;
         row.blocker = params[3];
@@ -99,4 +99,25 @@ test("supports real worker progress, CI repair, and approval transitions without
   const awaiting = await transitionUniversalTaskRecord(pool, { id, state: "awaiting_approval", summary: "A proposta aguarda revisão; a ação original ainda não foi executada." });
   assert.equal(awaiting.state, "awaiting_approval");
   assert.match(awaiting.summary, /ação original ainda não foi executada/);
+});
+
+
+test("uses compare-and-swap so a stale concurrent transition cannot overwrite newer state", async () => {
+  const pool = fakePool();
+  await createUniversalTaskRecord(pool, { id, originalRequest: "Faça uma tarefa", goal: "Concluir a tarefa" });
+  await transitionUniversalTaskRecord(pool, { id, state: "researching", summary: "Pesquisa iniciada." });
+  const originalQuery = pool.query.bind(pool);
+  let injectConcurrentChange = true;
+  pool.query = async (sql, params = []) => {
+    if (sql.startsWith("UPDATE jarvis_universal_tasks") && injectConcurrentChange) {
+      injectConcurrentChange = false;
+      pool.records.get(id).state = "planning";
+    }
+    return originalQuery(sql, params);
+  };
+  await assert.rejects(
+    () => transitionUniversalTaskRecord(pool, { id, state: "implementing", summary: "Tentativa atrasada." }),
+    /Estado da tarefa mudou durante a transição/,
+  );
+  assert.equal(pool.records.get(id).state, "planning");
 });
