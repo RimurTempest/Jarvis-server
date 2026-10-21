@@ -20,7 +20,7 @@ const SETTINGS = new Map([
   ["tela", "display"], ["brilho", "display"], ["display", "display"],
   ["som", "sound"], ["volume", "sound"],
   ["acessibilidade", "accessibility"],
-  ["aplicativos padrão", "default_apps"], ["apps padrão", "default_apps"],
+  ["aplicativos padrão", "default_apps"], ["aplicativos padrao", "default_apps"], ["apps padrão", "default_apps"], ["apps padrao", "default_apps"],
 ]);
 
 function normalize(value) {
