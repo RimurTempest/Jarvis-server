@@ -87,6 +87,7 @@ jobs:
           node --check jarvis-capabilities/test/self-improvement-capability-sync.test.mjs
           node --check jarvis-capabilities/test/self-improvement-capability-recovery.integration.test.mjs
           node --check jarvis-capabilities/universal-capability-execution.mjs
+          node --check jarvis-capabilities/test/universal-capability-execution.test.mjs
           node --check jarvis-capabilities/universal-task-store.mjs
       - name: Run capability tests
         run: |
