@@ -138,6 +138,7 @@ test("uses compare-and-swap so a stale concurrent transition cannot overwrite ne
 test("persists a structured plan and execution evidence only while the expected state is current", async () => {
   const pool = fakePool();
   await createUniversalTaskRecord(pool, { id, originalRequest: "Abra uma tela permitida", goal: "Abrir configurações de Bluetooth" });
+  await transitionUniversalTaskRecord(pool, { id, state: "researching", summary: "Pesquisa concluída." });
   await transitionUniversalTaskRecord(pool, { id, state: "planning", summary: "Plano em preparação." });
   const plan = { target: "android", riskLevel: "low", steps: [{ kind: "android.open_settings", parameters: { setting: "bluetooth" } }] };
   const execution = { status: "succeeded", summary: "O dispositivo confirmou a ação." };
