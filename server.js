@@ -1100,7 +1100,7 @@ async function processSelfImprovementRun(run) {
   };
   await persistCapabilityRunOutcome(run.capability_id, {
     runId: run.id, runState: finalState, summary: finalDraft.summary,
-    sourceCount: finalDraft.sourceCount, sourceRevision: finalDraft.baseRevision,
+    sourceCount: finalDraft.sourceCount, sourceRevision: finalDraft.pullRequest.commitSha,
     pullRequestNumber: finalDraft.pullRequest.number, pullRequestUrl: finalDraft.pullRequest.url,
     changedPaths: finalDraft.changedPaths, errorCode: persistedRunMetadata.errorCode,
   });
