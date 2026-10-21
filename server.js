@@ -449,7 +449,7 @@ function detectExplicitLearning(message) {
     /\b(me chame de|quero ser chamado de|quero que me chame de)\b/i,
     /\b(daqui em diante|de agora em diante|sempre faça|sempre faca|sempre responda|não altere|nao altere)\b/i,
     /\b(quero que você sempre|quero que voce sempre|não quero que você|nao quero que voce)\b/i,
-    /\b(quero que você|quero que voce|a partir de agora|quando eu pedir|quando eu solicitar|nas próximas conversas|nas proximas conversas)\b/i,
+    /\b(quero que você (?:entenda|interprete|responda|se lembre|mantenha|considere|evite|priorize)|quero que voce (?:entenda|interprete|responda|se lembre|mantenha|considere|evite|priorize)|a partir de agora|quando eu pedir|quando eu solicitar|nas próximas conversas|nas proximas conversas)\b/i,
   ];
   if (preferencePatterns.some((pattern) => pattern.test(raw)) && normalized.length >= 10) {
     return { type: "explicit_preference", category: "preferencia", content: raw, confidence: 0.95 };
