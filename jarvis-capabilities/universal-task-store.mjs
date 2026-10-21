@@ -60,9 +60,10 @@ export async function transitionUniversalTaskRecord(pool, { id, state, summary =
   const current = selected.rows[0].state;
   if (current !== state && (TERMINAL.has(current) || !TRANSITIONS[current]?.includes(state))) throw new Error("Transição de tarefa não permitida.");
   const result = await pool.query(
-    "UPDATE jarvis_universal_tasks SET state = $2, summary = COALESCE($3, summary), blocker = $4, run_id = COALESCE($5, run_id), updated_at = NOW() WHERE id = $1 RETURNING id, capability_id, run_id, goal, state, summary, blocker, created_at, updated_at",
-    [id, state, summary, blocker, runId],
+    "UPDATE jarvis_universal_tasks SET state = $2, summary = COALESCE($3, summary), blocker = $4, run_id = COALESCE($5, run_id), updated_at = NOW() WHERE id = $1 AND state = $6 RETURNING id, capability_id, run_id, goal, state, summary, blocker, created_at, updated_at",
+    [id, state, summary, blocker, runId, current],
   );
+  if (!result.rowCount) throw new Error("Estado da tarefa mudou durante a transição; recarregue e tente novamente.");
   return result.rows[0] ?? null;
 }
 
