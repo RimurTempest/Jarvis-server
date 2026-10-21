@@ -88,7 +88,7 @@ test("rejects a repository with no eligible source files", async () => {
 });
 
 test("accepts ordinary token input expressions in repository source context", async () => {
-  const source = "const token = tokenInput.value.trim();\\nexport const pairingReady = true;\\n";
+  const source = "const token = tokenInput.value.trim();\nexport const pairingReady = true;\n";
   const fetchImpl = async (url) => {
     if (url.endsWith("/git/ref/heads/main")) return response(200, { object: { sha: revision } });
     if (url.includes("/git/trees/")) {
