@@ -23,7 +23,7 @@ export function resolveUniversalTaskRecovery(runState, taskState) {
 
   if (BLOCKED.has(runState)) {
     const descriptions = {
-      failed: "A preparação da capacidade falhou; nenhuma execução da tarefa original foi confirmada.",
+      failed: "A preparação da capacidade falhou; a tarefa original não foi executada.",
       rolled_back: "A alteração foi revertida após a verificação; a tarefa original não foi executada.",
       merge_unverified: "Não foi possível confirmar a alteração ou a recuperação; a tarefa original não foi executada.",
     };
