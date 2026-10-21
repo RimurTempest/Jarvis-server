@@ -9,8 +9,6 @@ import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, C
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
 import { parseCapabilityIntentClassification, shouldClassifyCapabilityIntent } from "./jarvis-capabilities/capability-intent-classifier.mjs";
 import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
-import { enqueueAndroidAction } from "./jarvis-capabilities/postgres-action-queue.mjs";
-import { resolveAndroidActionIntent } from "./jarvis-capabilities/android-action-intent.mjs";
 import { registerAndroidActionRoutes } from "./jarvis-capabilities/android-action-routes.mjs";
 import { registerAndroidPairingPage } from "./jarvis-capabilities/android-pairing-page.mjs";
 import { buildCapabilityPromptContext } from "./jarvis-capabilities/capability-prompt-context.mjs";
@@ -1694,46 +1692,6 @@ app.post("/api/chat", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Falha ao inicializar banco:", error.message);
     return res.status(503).json({ error: "Banco de dados indisponível." });
-  }
-
-  const androidIntent = resolveAndroidActionIntent(message);
-  if (androidIntent) {
-    let queuedAction;
-    try {
-      queuedAction = await enqueueAndroidAction(pool, {
-        id: `android-action-${randomUUID()}`,
-        capabilityId: `android-capability-${randomUUID()}`,
-        action: androidIntent.action,
-      });
-    } catch (error) {
-      console.error("Falha ao enfileirar ação Android:", error?.name || "Error");
-      return res.status(503).json({ error: "Não foi possível colocar a ação do celular na fila. Nenhuma ação foi executada." });
-    }
-
-    const confirmationText = queuedAction.requiresUserConfirmation
-      ? " O celular deverá pedir sua confirmação antes de iniciar a ligação."
-      : "";
-    const response = `Registrei a solicitação para o celular: ${androidIntent.goal}. Ela está na fila e ainda não foi confirmada como executada.${confirmationText}`;
-    try {
-      await saveMessage("user", message);
-      await saveMessage("assistant", response);
-    } catch (error) {
-      console.error("Falha ao salvar conversa de ação Android:", error?.name || "Error");
-    }
-    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    sendEvent(res, "delta", { text: response });
-    sendEvent(res, "android_action_queued", {
-      actionId: queuedAction.id,
-      state: queuedAction.state,
-      actionType: queuedAction.action.type,
-      requiresUserConfirmation: queuedAction.requiresUserConfirmation,
-      goal: androidIntent.goal,
-      expiresAt: queuedAction.expiresAt,
-    });
-    sendEvent(res, "done", {});
-    return res.end();
   }
 
   if (!providers.length) return res.status(503).json({ error: "Nenhum provedor de IA configurado." });
