@@ -887,13 +887,13 @@ async function reconcileStaleCapabilities() {
 async function reconcileStaleUniversalTasks() {
   if (!pool) return 0;
   const result = await pool.query(
-    \`SELECT task.id, task.state AS task_state, run.state AS run_state
+    `SELECT task.id, task.state AS task_state, run.state AS run_state
      FROM jarvis_universal_tasks AS task
      JOIN jarvis_self_improvement_runs AS run ON run.id = task.run_id
      WHERE task.state IN ('researching', 'planning', 'implementing', 'testing')
        AND run.state IN ('draft_pr_created', 'runtime_verified', 'rolled_back', 'merge_unverified', 'failed')
      ORDER BY task.updated_at ASC
-     LIMIT 200\`,
+     LIMIT 200`,
   );
   let reconciled = 0;
   for (const row of result.rows) {
@@ -911,7 +911,7 @@ async function reconcileStaleUniversalTasks() {
       console.error("Falha ao reconciliar tarefa universal após reinício:", error?.name || "Error");
     }
   }
-  if (reconciled) console.info(\`Tarefas universais reconciliadas: \${reconciled}\`);
+  if (reconciled) console.info(`Tarefas universais reconciliadas: ${reconciled}`);
   return reconciled;
 }
 
