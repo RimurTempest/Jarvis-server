@@ -38,8 +38,8 @@ export async function initializeActionQueue(pool) {
     capability_id TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'completed', 'failed', 'expired')),
     action JSONB NOT NULL,
-    target_device_id TEXT,
-    requires_user_confirmation BOOLEAN NOT NULL DEFAULT FALSE,
+    target_device_id TEXT NOT NULL,
+    requires_user_confirmation BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
     delivered_at TIMESTAMPTZ,
@@ -51,6 +51,18 @@ export async function initializeActionQueue(pool) {
     result JSONB
   )`);
   await pool.query("ALTER TABLE jarvis_action_queue ADD COLUMN IF NOT EXISTS target_device_id TEXT");
+  // Expire legacy active rows that have no safe destination. Terminal rows are
+  // retained for audit, but assigned a non-routable marker before NOT NULL.
+  await pool.query(`UPDATE jarvis_action_queue
+    SET state = 'expired', completed_at = COALESCE(completed_at, NOW()),
+        result = COALESCE(result, '{"ok":false,"message":"Ação legada sem destino de dispositivo."}'::jsonb),
+        lease_token_hash = NULL
+    WHERE target_device_id IS NULL AND state IN ('pending', 'delivered')`);
+  await pool.query("UPDATE jarvis_action_queue SET target_device_id = 'legacy-unassigned' WHERE target_device_id IS NULL");
+  await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN target_device_id SET NOT NULL");
+  await pool.query("ALTER TABLE jarvis_action_queue ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE");
+  await pool.query("UPDATE jarvis_action_queue SET requires_user_confirmation = TRUE WHERE state IN ('pending', 'delivered')");
+  await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_target_pending ON jarvis_action_queue (target_device_id, created_at, id) WHERE state = 'pending'");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_pending ON jarvis_action_queue (created_at, id) WHERE state = 'pending'");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_jarvis_action_queue_lease ON jarvis_action_queue (lease_expires_at) WHERE state = 'delivered'");
 }
@@ -62,7 +74,7 @@ export async function initializeActionQueue(pool) {
 export async function enqueueAndroidAction(pool, { id, capabilityId, action, expiresAt, targetDeviceId }) {
   if (!pool || typeof pool.query !== "function") throw new TypeError("pool PostgreSQL inválido.");
   const envelope = createAndroidActionEnvelope({ id, capabilityId, action, expiresAt });
-  const targetId = targetDeviceId === undefined ? null : cleanDeviceId(targetDeviceId);
+  const targetId = cleanDeviceId(targetDeviceId);
   const expires = new Date(envelope.expiresAt);
   const normalized = validateAndroidAction(envelope.action);
   await pool.query(
@@ -116,7 +128,7 @@ export async function claimNextAndroidAction(pool, { deviceId, now = new Date(),
     const selected = await client.query(
       `SELECT id, capability_id, action, target_device_id, requires_user_confirmation, expires_at, delivery_attempts
        FROM jarvis_action_queue
-       WHERE state = 'pending' AND expires_at > $1 AND (target_device_id IS NULL OR target_device_id = $2)
+       WHERE state = 'pending' AND expires_at > $1 AND target_device_id = $2
        ORDER BY created_at ASC, id ASC
        LIMIT 1 FOR UPDATE SKIP LOCKED`,
       [current, cleanId]
