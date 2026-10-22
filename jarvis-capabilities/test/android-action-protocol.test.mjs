@@ -22,7 +22,7 @@ test("rejects arbitrary code, shell commands, and unsafe URL schemes", () => {
   assert.throws(() => validateAndroidAction({ type: "open_settings", setting: "factory_reset" }), /não permitida/);
 });
 
-test("marks sensitive external actions as requiring device confirmation", () => {
+test("requires explicit device confirmation for every queued action", () => {
   const envelope = createAndroidActionEnvelope({
     id: "action-01",
     capabilityId: "capability-01",
@@ -30,6 +30,9 @@ test("marks sensitive external actions as requiring device confirmation", () => 
   });
   assert.equal(envelope.state, "pending");
   assert.equal(envelope.requiresUserConfirmation, true);
+  const copyEnvelope = createAndroidActionEnvelope({ id: "action-copy-confirm", capabilityId: "capability-01", action: { type: "copy_text", text: "hello" } });
+  assert.equal(copyEnvelope.requiresUserConfirmation, true);
+  assert.throws(() => normalizeAndroidActionResult(copyEnvelope, { ok: true, message: "copied" }), /confirmação explícita/);
   assert.throws(() => normalizeAndroidActionResult(envelope, { ok: true, message: "started" }), /confirmação explícita/);
   const completed = normalizeAndroidActionResult(envelope, {
     ok: true, message: "dialer opened", userConfirmed: true,

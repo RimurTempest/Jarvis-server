@@ -16,6 +16,7 @@ on:
   pull_request:
     paths:
       - "jarvis-capabilities/**"
+      - "server.js"
       - ".github/workflows/android-enrollment-tests.yml"
   workflow_dispatch:
 
@@ -34,6 +35,7 @@ jobs:
           node --check jarvis-capabilities/android-device-registry.mjs
           node --check jarvis-capabilities/android-action-routes.mjs
           node --check jarvis-capabilities/android-pairing-page.mjs
+          node --check jarvis-capabilities/android-action-proposal.mjs
           node --check jarvis-capabilities/test/android-pairing-page.test.mjs
           node --check server.js
           node --check jarvis-capabilities/test/android-device-registry.test.mjs
