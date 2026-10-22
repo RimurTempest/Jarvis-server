@@ -88,6 +88,7 @@ export async function enqueueAndroidAction(pool, { id, capabilityId, action, exp
     capabilityId: envelope.capabilityId,
     state: "pending",
     action: normalized,
+    targetDeviceId: targetId,
     requiresUserConfirmation: envelope.requiresUserConfirmation,
     expiresAt: envelope.expiresAt,
   };
