@@ -156,7 +156,7 @@ async function requireChatAuth(req, res, next) {
   if (validToken(req)) return next();
 
   const authorization = req.headers.authorization || "";
-  const match = /^Bearer\\s+([^\\s]+)$/i.exec(authorization);
+  const match = /^Bearer\s+([^\s]+)$/i.exec(authorization);
   const deviceId = req.headers["x-jarvis-device-id"];
   if (!pool || !match || typeof deviceId !== "string" || !deviceId) {
     return res.status(401).json({ error: "Não autorizado." });
