@@ -1,14 +1,17 @@
 {
-"name": "jarvis-server",
-"version": "1.0.0",
-"private": true,
-"type": "module",
-"scripts": {
-"start": "node server.js"
-},
-"dependencies": {
-"express": "^4.21.2",
-"openai": "^5.12.2",
-"pg": "^8.16.3"
-}
+  "name": "jarvis-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "check:syntax": "node --check server.js && node --check behavior.js && node --check jarvis-update-safety/validate-release.mjs",
+    "test:safety": "node --test jarvis-update-safety/test/validate-release.test.mjs",
+    "test": "npm run check:syntax && npm run test:safety"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "openai": "^5.12.2",
+    "pg": "^8.16.3"
+  }
 }
