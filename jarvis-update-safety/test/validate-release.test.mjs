@@ -180,3 +180,48 @@ test('blocks malformed test results', () => {
     result.errors.some((error) => error.includes('featureId válido'))
   );
 });
+
+test('blocks a candidate whose version matches the stable baseline', () => {
+  const result = validateRelease(registry, {
+    ...goodReport,
+    candidateVersion: goodReport.baselineVersion
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.installAllowed, false);
+  assert.ok(result.errors.some((error) => error.includes('diferente')));
+});
+
+test('blocks release when APK signature verification is missing', () => {
+  const result = validateRelease(registry, {
+    ...goodReport,
+    androidSignatureVerified: false,
+    ownerApproval: 'approved'
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.installAllowed, false);
+  assert.ok(result.errors.some((error) => error.includes('assinatura')));
+});
+
+test('blocks unknown owner-approval values', () => {
+  const result = validateRelease(registry, {
+    ...goodReport,
+    ownerApproval: 'yes'
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.installAllowed, false);
+  assert.ok(result.errors.some((error) => error.includes('ownerApproval')));
+});
+
+test('blocks a missing baseline version even when all feature tests pass', () => {
+  const result = validateRelease(registry, {
+    ...goodReport,
+    baselineVersion: ' '
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.installAllowed, false);
+  assert.ok(result.errors.some((error) => error.includes('baselineVersion')));
+});
