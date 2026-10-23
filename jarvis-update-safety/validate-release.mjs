@@ -52,6 +52,7 @@ export function validateRelease(registry, report) {
     typeof report.candidateVersion === 'string' &&
     typeof report.baselineVersion === 'string' &&
     report.candidateVersion.trim() &&
+    report.baselineVersion.trim() &&
     report.candidateVersion.trim() === report.baselineVersion.trim()
   ) {
     invalid(
@@ -167,11 +168,14 @@ export function validateRelease(registry, report) {
     );
   }
 
-  if (
-    report.ownerApproval !== 'pending' &&
-    report.ownerApproval !== 'approved'
-  ) {
+  if (report.ownerApproval !== 'pending' && report.ownerApproval !== 'approved') {
     invalid('ownerApproval deve ser pending ou approved.');
+  }
+
+  // Uma aprovação nunca deve compensar falhas nos testes, versões inválidas
+  // ou verificações de recuperação/assinatura ausentes.
+  if (report.ownerApproval === 'approved' && errors.length > 0) {
+    invalid('A aprovação do responsável não pode liberar um candidato que falhou na validação.');
   }
 
   const ok = errors.length === 0;
