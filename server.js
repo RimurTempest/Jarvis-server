@@ -24,7 +24,7 @@ import { resolveSelfImprovementTarget, requiredWorkflowsForTarget } from "./jarv
 import { initializeUniversalTaskStore, createUniversalTaskRecord, transitionUniversalTaskRecord, getUniversalTaskRecord } from "./jarvis-capabilities/universal-task-store.mjs";
 import { runPersistedUniversalTask } from "./jarvis-capabilities/universal-task-orchestrator.mjs";
 import { createAndroidUniversalAdapterRegistry } from "./jarvis-capabilities/universal-task-android-adapters.mjs";
-import { initializeAndroidDeviceRegistry } from "./jarvis-capabilities/android-device-registry.mjs";
+import { initializeAndroidDeviceRegistry, authenticateAndroidDevice } from "./jarvis-capabilities/android-device-registry.mjs";
 import { getSelfImprovementReadiness } from "./jarvis-capabilities/self-improvement-readiness.mjs";
 import { resolveUniversalTaskRecovery } from "./jarvis-capabilities/universal-task-recovery.mjs";
 import { shouldShowSources } from "./jarvis-capabilities/source-display-policy.mjs";
@@ -145,6 +145,36 @@ function validToken(req) {
 function requireAuth(req, res, next) {
   if (!validToken(req)) return res.status(401).json({ error: "Não autorizado." });
   next();
+}
+
+/**
+ * Chat accepts either the server-side API token (for trusted integrations)
+ * or a registered Android device credential. The device token is validated
+ * against PostgreSQL and is never treated as the administrative enrollment token.
+ */
+async function requireChatAuth(req, res, next) {
+  if (validToken(req)) return next();
+
+  const authorization = req.headers.authorization || "";
+  const match = /^Bearer\\s+([^\\s]+)$/i.exec(authorization);
+  const deviceId = req.headers["x-jarvis-device-id"];
+  if (!pool || !match || typeof deviceId !== "string" || !deviceId) {
+    return res.status(401).json({ error: "Não autorizado." });
+  }
+
+  try {
+    await initializeDatabase();
+    await initializeAndroidDeviceRegistry(pool);
+    const result = await authenticateAndroidDevice(pool, {
+      deviceId,
+      token: match[1],
+    });
+    if (!result.ok) return res.status(401).json({ error: "Dispositivo Android não autorizado." });
+    return next();
+  } catch (error) {
+    console.error("Falha ao autenticar dispositivo para o chat:", error?.name || "Error");
+    return res.status(503).json({ error: "Autenticação do dispositivo indisponível." });
+  }
 }
 
 function normalizeText(value) {
@@ -1750,7 +1780,7 @@ app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => 
   }
 });
 
-app.post("/api/chat", requireAuth, async (req, res) => {
+app.post("/api/chat", requireChatAuth, async (req, res) => {
   const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
   if (!message) return res.status(400).json({ error: "A mensagem não pode estar vazia." });
   if (message.length > MAX_MESSAGE_LENGTH) return res.status(413).json({ error: "A mensagem excede o limite permitido." });
