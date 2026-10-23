@@ -10,6 +10,7 @@ on:
   pull_request:
     paths:
       - "jarvis-capabilities/**"
+      - "server.js"
       - ".github/workflows/capability-tests.yml"
   workflow_dispatch:
 
@@ -93,8 +94,7 @@ jobs:
           node --check jarvis-capabilities/test/universal-task-orchestrator.test.mjs
           node --check jarvis-capabilities/test/universal-capability-execution.test.mjs
           node --check jarvis-capabilities/universal-task-store.mjs
-          node --check jarvis-capabilities/universal-task-recovery.mjs
-          node --check jarvis-capabilities/test/universal-task-recovery.test.mjs
+          node --check jarvis-capabilities/universal-task-recovery.test.mjs
       - name: Run capability tests
         run: |
           node --test jarvis-capabilities/test/provider-failover-policy.test.mjs
