@@ -225,3 +225,42 @@ test('blocks a missing baseline version even when all feature tests pass', () =>
   assert.equal(result.installAllowed, false);
   assert.ok(result.errors.some((error) => error.includes('baselineVersion')));
 });
+
+
+test('owner approval cannot bypass a failed required feature', () => {
+  const result = validateRelease(registry, {
+    ...goodReport,
+    ownerApproval: 'approved',
+    results: [
+      passingResults[0],
+      { ...passingResults[1], status: 'fail' }
+    ]
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.installAllowed, false);
+  assert.ok(result.errors.some((error) => error.includes('não pode liberar')));
+});
+
+test('blocks a candidate that reuses the stable baseline version', () => {
+  const result = validateRelease(registry, {
+    ...goodReport,
+    candidateVersion: goodReport.baselineVersion,
+    ownerApproval: 'approved'
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.installAllowed, false);
+  assert.ok(result.errors.some((error) => error.includes('diferente')));
+});
+
+test('blocks unknown approval states', () => {
+  const result = validateRelease(registry, {
+    ...goodReport,
+    ownerApproval: 'yes'
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.installAllowed, false);
+  assert.ok(result.errors.some((error) => error.includes('ownerApproval')));
+});
