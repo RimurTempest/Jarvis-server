@@ -1,4 +1,3 @@
-
 name: JARVIS Update Safety Tests
 
 on:
@@ -6,10 +5,16 @@ on:
     branches:
       - feature/update-safety-foundation
     paths:
+      - "server.js"
+      - "behavior.js"
+      - "package.json"
       - "jarvis-update-safety/**"
       - ".github/workflows/update-safety-tests.yml"
   pull_request:
     paths:
+      - "server.js"
+      - "behavior.js"
+      - "package.json"
       - "jarvis-update-safety/**"
       - ".github/workflows/update-safety-tests.yml"
   workflow_dispatch:
@@ -17,9 +22,6 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: jarvis-update-safety
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,5 +31,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Run automated tests
-        run: node --test test/validate-release.test.mjs
+      - name: Check JavaScript syntax and run regression-safety tests
+        run: |
+          npm run check:syntax
+          npm run test:safety
