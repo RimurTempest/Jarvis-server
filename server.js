@@ -1,5 +1,6 @@
 import express from "express";
 import OpenAI from "openai";
+import { installJarvisBridge } from "./jarvis-evolution-bridge.mjs";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
@@ -41,6 +42,7 @@ const pool = process.env.DATABASE_URL
     })
   : null;
 
+  installJarvisBridge({ app, express, pool });
 const providers = [];
 
 if (process.env.GROQ_API_KEY) {
