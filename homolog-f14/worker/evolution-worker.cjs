@@ -3,9 +3,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const cp = require("node:child_process");
-const { prepareWorkspace, taskId } = require("./dev-workspace.cjs");
+const { prepareWorkspaceAsync, gitAsync, taskId } = require("./dev-workspace.cjs");
 const { manifestFor, applyChanges, sha } = require("./capability-changes.cjs");
-const { staticCheck, runIsolatedNodeTests } = require("./sandbox-tests.cjs");
+const { staticCheckAsync, runIsolatedNodeTests } = require("./sandbox-tests.cjs");
 const { integrateAndroidRegistry } = require("./android-runtime-registration.cjs");
 
 function git(cwd, args) {
@@ -34,6 +34,18 @@ function commitChanges(worktree, files, id) {
   if (!/^[a-f0-9]{40}$/i.test(commitSha)) throw new Error("Commit inválido.");
   return commitSha;
 }
+async function commitChangesAsync(worktree, files, id, signal) {
+  const config=["-c","user.name=JARVIS Development Worker","-c","user.email=jarvis-worker@localhost"];
+  await gitAsync(worktree,[...config,"add","--",...files.map(f=>f.path)],signal);
+  await gitAsync(worktree,[...config,"diff","--cached","--check"],signal);
+  const staged=(await gitAsync(worktree,[...config,"diff","--cached","--name-only"],signal)).split("\n").filter(Boolean);
+  if(!staged.length || staged.some(x=>!files.some(f=>f.path===x))) throw new Error("Git contém modificações inesperadas.");
+  await gitAsync(worktree,[...config,"commit","-m",`feat(jarvis): supervised capability ${id}`],signal);
+  const commitSha=await gitAsync(worktree,[...config,"rev-parse","HEAD"],signal);
+  if(!/^[a-f0-9]{40}$/i.test(commitSha))throw new Error("Commit inválido.");
+  return commitSha;
+}
+
 function assertRepoKind(repoPath, target) {
   if (target === "android") {
     if (!fs.existsSync(path.join(repoPath, "app", "build.gradle.kts"))) {
@@ -64,6 +76,14 @@ function discardAttempt(worktree, changes) {
     } else {
       git(worktree, ["restore", "--worktree", "--", item.path]);
     }
+  }
+}
+
+async function discardAttemptAsync(worktree, changes) {
+  for (const item of changes) {
+    const full=path.join(worktree,item.path);
+    if (item.added) fs.unlinkSync(full);
+    else await gitAsync(worktree,["restore","--worktree","--",item.path]);
   }
 }
 
@@ -113,8 +133,8 @@ async function runEvolution({
     }
     const selectedRepo = repositories[plan.target] || repoPath;
     assertRepoKind(selectedRepo, plan.target);
-    const preview = prepareWorkspace({
-      repoPath: selectedRepo, worktreesDir, evolutionId: id, apply: false
+    const preview = await prepareWorkspaceAsync({
+      repoPath: selectedRepo, worktreesDir, evolutionId: id, apply: false, signal
     });
     if (!apply) {
       return { taskId: id, status: "preview", applied: false,
@@ -126,8 +146,8 @@ async function runEvolution({
       target: plan.target,
       steps: plan.steps, permissions: plan.permissions
     });
-    const workspace = prepareWorkspace({
-      repoPath: selectedRepo, worktreesDir, evolutionId: id, apply: true
+    const workspace = await prepareWorkspaceAsync({
+      repoPath: selectedRepo, worktreesDir, evolutionId: id, apply: true, signal
     });
     const manifest = manifestFor(workspace.worktree, plan.target, task.request_text);
     const maxAttempts = 3;
@@ -148,8 +168,8 @@ async function runEvolution({
           changes.push(...binding.changes);
           runtimeBindingPrepared = binding.prepared;
         }
-        checks = staticCheck({
-          worktree: workspace.worktree, target: plan.target, files: changes
+        checks = await staticCheckAsync({
+          worktree: workspace.worktree, target: plan.target, files: changes, signal
         });
         sandbox = await testRunner({ worktree: workspace.worktree, target: plan.target, files: changes, signal });
         if (!sandbox || typeof sandbox.executed !== "boolean" ||
@@ -175,7 +195,7 @@ async function runEvolution({
         attempts.push({ number: attempt, checksPassed: false,
           testsExecuted: sandbox?.executed === true,
           testsPassed: false, reason: feedback.failure });
-        discardAttempt(workspace.worktree, changes);
+        await discardAttemptAsync(workspace.worktree, changes);
         changes = null;
         sandbox = null;
         if (error?.code === "JARVIS_TESTS_UNAVAILABLE") {
@@ -197,7 +217,7 @@ async function runEvolution({
       await api.beforeCommit(id);
       assertLease();
     }
-    const commitSha = commitChanges(workspace.worktree, changes, id);
+    const commitSha = await commitChangesAsync(workspace.worktree, changes, id, signal);
     const report = {
       // Marca como aplicada apenas a mudança local já commitada e testada.
       // Não implica publicação, instalação, CI remoto ou aprendizado ativo.
@@ -232,4 +252,4 @@ async function runEvolution({
     throw error;
   }
 }
-module.exports = { runEvolution, commitChanges, assertRepoKind };
+module.exports = { runEvolution, commitChanges, commitChangesAsync, assertRepoKind };

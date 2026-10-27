@@ -2,6 +2,7 @@
 
 const path = require("node:path");
 const cp = require("node:child_process");
+const { runCancellable } = require("./cancellable-process.cjs");
 
 const IMAGE_PATTERN = /^node@sha256:[a-f0-9]{64}$/;
 const MODULE_PATTERN = /^jarvis-bridge\/capabilities\/[A-Za-z0-9_/-]+\.(?:cjs|mjs|js)$/;
@@ -22,6 +23,21 @@ function staticCheck({ worktree, target, files }) {
     results.push({ kind: "android-compilation", executed: false,
       reason: "Somente CI Android com SDK poderá comprovar compilação Kotlin." });
   }
+  return results;
+}
+
+async function staticCheckAsync({ worktree, target, files, signal }) {
+  const results=[];
+  for (const file of files) {
+    if (!/\.(cjs|mjs|js)$/.test(file.path)) continue;
+    const check=await runCancellable(process.execPath,["--check",path.join(worktree,file.path)],{
+      cwd:worktree,signal,timeoutMs:15000,maxOutputBytes:30000,env:{PATH:process.env.PATH}
+    });
+    const passed=!check.cancelled && check.status===0;
+    results.push({file:file.path,passed,kind:"syntax-only"});
+    if (!passed) throw new Error("Verificação estática reprovada: "+file.path);
+  }
+  if(target==="android") results.push({kind:"android-compilation",executed:false,reason:"CI Android com SDK obrigatório."});
   return results;
 }
 
@@ -141,6 +157,6 @@ function runIsolatedNodeTests({
 }
 
 module.exports = {
-  staticCheck, runIsolatedNodeTests, normalizeGeneratedModules,
+  staticCheck, staticCheckAsync, runIsolatedNodeTests, normalizeGeneratedModules,
   parseTapSummary, dockerArgs
 };

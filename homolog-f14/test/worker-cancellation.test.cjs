@@ -32,3 +32,16 @@ test("verificação antes do commit aguarda renovação e recusa tarefa revogada
    execute:async({api:guard})=>{await guard.beforeCommit(id);commit=true;return {};}}),/Autorização de execução perdida/);
  assert.equal(commit,false);assert.equal(reports,0);assert.equal(n,2);
 });
+test("comando Git demorado é cancelável sem bloquear heartbeat",async()=>{
+ const {gitAsync}=require("../worker/dev-workspace.cjs");
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),"jarvis-fake-git-"));const gitFile=path.join(dir,"git"),started=path.join(dir,"started"),late=path.join(dir,"late");const oldPath=process.env.PATH;
+ fs.writeFileSync(gitFile,`#!${process.execPath}\nconst fs=require('fs');fs.writeFileSync(${JSON.stringify(started)},'yes');setTimeout(()=>fs.writeFileSync(${JSON.stringify(late)},'commit'),1200);\n`,{mode:0o755});
+ process.env.PATH=dir+path.delimiter+oldPath;const c=new AbortController();let beats=0;const timer=setInterval(()=>beats++,15);
+ try{
+  const pending=gitAsync(dir,["status"],c.signal);const deadline=Date.now()+2000;
+  while(!fs.existsSync(started)&&Date.now()<deadline) await new Promise(r=>setTimeout(r,10));
+  assert.equal(fs.existsSync(started),true);await new Promise(r=>setTimeout(r,75));c.abort();
+  await assert.rejects(pending,/Git interrompido/);await new Promise(r=>setTimeout(r,1250));
+  assert.equal(fs.existsSync(late),false);assert.ok(beats>=4);
+ }finally{process.env.PATH=oldPath;clearInterval(timer);fs.rmSync(dir,{recursive:true,force:true});}
+});
