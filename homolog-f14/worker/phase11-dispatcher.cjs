@@ -65,6 +65,7 @@ async function processAuthorizedOnce({
   let leaseFailure = null;
   const leaseController = new AbortController();
   let renewing = false;
+  let renewalPromise = null;
   let renewTimer = null;
   const assertLease = () => {
     if (leaseFailure) throw new Error("Autorização de execução perdida; revisão manual necessária.");
@@ -74,6 +75,12 @@ async function processAuthorizedOnce({
       if (requestedId !== id) throw new Error("Acesso a outra tarefa recusado.");
       assertLease();
       return { task: { id, state: "requested", request_text: claimed.request } };
+    },
+    beforeCommit: async requestedId => {
+      if (requestedId !== id) throw new Error("Acesso a outra tarefa recusado.");
+      await refresh();
+      assertLease();
+      return { reservationConfirmed: true };
     },
     advance: async (requestedId, state) => {
       if (requestedId !== id ||
@@ -85,24 +92,25 @@ async function processAuthorizedOnce({
     }
   };
   // O worker não deve imprimir texto livre do pedido ou tokens nos logs.
-  const refresh = async () => {
-    if (renewing || leaseFailure) return;
+  const refresh = () => {
+    if (leaseFailure) return Promise.resolve();
+    if (renewalPromise) return renewalPromise;
     renewing = true;
-    let renewTimeout;
-    try {
-      await Promise.race([
-        Promise.resolve().then(() => api.renew(id, claimed.leaseToken)),
-        new Promise((_, reject) => {
-          renewTimeout = setTimeout(() => reject(new Error("Renovação excedeu o prazo.")), renewTimeoutMs);
-        })
-      ]);
-    } catch {
-      leaseFailure = new Error("Renovação de lease recusada.");
-      leaseController.abort();
-    } finally {
-      clearTimeout(renewTimeout);
-      renewing = false;
-    }
+    renewalPromise = (async () => {
+      let renewTimeout;
+      try {
+        await Promise.race([
+          Promise.resolve().then(() => api.renew(id, claimed.leaseToken)),
+          new Promise((_, reject) => {
+            renewTimeout = setTimeout(() => reject(new Error("Renovação excedeu o prazo.")), renewTimeoutMs);
+          })
+        ]);
+      } catch {
+        leaseFailure = new Error("Renovação de lease recusada.");
+        leaseController.abort();
+      } finally { clearTimeout(renewTimeout); }
+    })().finally(() => { renewing = false; renewalPromise = null; });
+    return renewalPromise;
   };
   let outcome;
   let errorDuringExecution = null;

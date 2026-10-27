@@ -25,3 +25,10 @@ test("renovação que não responde cancela antes de executar",async()=>{
  await assert.rejects(processAuthorizedOnce({api,provider,repositories:{},worktreesDir:"unused",renewTimeoutMs:30,execute:async()=>{executed=true;}}),/Autorização de execução perdida/);
  assert.equal(executed,false);assert.equal(reports,0);
 });
+test("verificação antes do commit aguarda renovação e recusa tarefa revogada",async()=>{
+ let n=0,commit=false,reports=0;
+ const api={claim:async()=>({id,request:"teste",leaseToken:token}),renew:async()=>{if(++n===2)throw Error("revogado");return {id};},report:async()=>reports++};
+ await assert.rejects(processAuthorizedOnce({api,provider,repositories:{},worktreesDir:"unused",heartbeatMs:1000,
+   execute:async({api:guard})=>{await guard.beforeCommit(id);commit=true;return {};}}),/Autorização de execução perdida/);
+ assert.equal(commit,false);assert.equal(reports,0);assert.equal(n,2);
+});

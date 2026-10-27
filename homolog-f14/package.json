@@ -1,0 +1,11 @@
+{
+  "name": "jarvis-fase14-compatibilidade-isolada",
+  "private": true,
+  "version": "0.0.0-homologacao",
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "test": "node --test test/worker-http-contract.test.cjs test/integrated-worker-bridge.test.mjs test/fase11.test.mjs test/fase12.test.mjs test/fase13.http.test.mjs",
+    "preflight": "node worker/phase11-cli.cjs --preflight"
+  }
+}

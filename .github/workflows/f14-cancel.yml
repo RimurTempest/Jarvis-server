@@ -9,10 +9,19 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: node --test homolog-f14/test/cancellable-process.test.cjs homolog-f14/test/worker-cancellation.test.cjs
+          node-version: '${{ matrix.node }}'
+      - name: F14 regression tests
+        run: node --test homolog-f14/test/worker-http-contract.test.cjs homolog-f14/test/integrated-worker-bridge.test.mjs homolog-f14/test/fase11.test.mjs homolog-f14/test/fase12.test.mjs homolog-f14/test/fase13.http.test.mjs
+      - name: F13 hardened sandbox checks
+        run: node --test f13-bridge/test/hardened-container.test.cjs f13-bridge/test/integration-hardening.test.cjs f13-bridge/test/selective-bridge.test.cjs f13-bridge/test/async-container.test.cjs
+      - name: Cancellation and real local Git checks
+        run: node --test homolog-f14/test/cancellable-process.test.cjs homolog-f14/test/worker-cancellation.test.cjs homolog-f14/test/worker-integration-cancellation.test.cjs
