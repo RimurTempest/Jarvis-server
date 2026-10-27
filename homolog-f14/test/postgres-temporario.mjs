@@ -116,11 +116,28 @@ async function main() {
     assert.equal(row.rows[0].state,"blocked");
     assert.equal(row.rows[0].report.learned,false);
     assertions+=4;
+    // Revogação e conclusão disputam a mesma linha. Só uma pode vencer.
+    for (let i=0;i<6;i++) {
+      const race=await store.create("owner_one",`Capacidade teste corrida ${i}`,randomUUID());
+      await store.authorize("owner_one",race.id);
+      const reservation=await store.claim();
+      assert.equal(reservation.id,race.id);
+      const results=await Promise.allSettled([
+        store.revokeDevelopment("owner_one",race.id),
+        store.report(race.id,reservation.leaseToken,{status:"needs_review",summary:"proposta",testsPassed:true,testsExecuted:true,commitSha:"a".repeat(40),branch:`work/evolution/${race.id}`})
+      ]);
+      assert.equal(results.filter(r=>r.status==="fulfilled").length,1);
+      assert.equal(results.filter(r=>r.status==="rejected").length,1);
+      const state=await pool.query("SELECT state FROM jarvis_supervised_v11_requests WHERE id=$1",[race.id]);
+      if (results[0].status==="fulfilled") assert.equal(state.rows[0].state,"blocked");
+      else assert.equal(state.rows[0].state,"needs_review");
+      assertions+=4;
+    }
     await pool.end();
     pool=null;
     pool=new Pool(opts);
     const persisted=createEvolutionStore(pool);
-    assert.equal((await persisted.list("owner_one")).length,2);
+    assert.equal((await persisted.list("owner_one")).length,8);
     assertions++;
     await pool.query(
       "UPDATE jarvis_android_devices SET revoked_at=NOW() WHERE device_id=$1",
