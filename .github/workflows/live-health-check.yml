@@ -1,5 +1,8 @@
 name: JARVIS live health verification
 on:
+  push:
+    branches:
+      - feature/android-device-enrollment-foundation
   pull_request:
     paths:
       - '.github/workflows/live-health-check.yml'
@@ -9,9 +12,15 @@ permissions:
 jobs:
   health:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 8
     steps:
-      - name: Verify health endpoint
+      - name: Verify deployed health and revision
         run: |
-          curl --fail --silent --show-error --max-time 90 --retry 2 --retry-delay 5 https://jarvis-server-odpk.onrender.com/health -o /tmp/jarvis-health.json
-          node -e 'const f=require("fs"); const h=JSON.parse(f.readFileSync("/tmp/jarvis-health.json","utf8")); if(h.status!=="ok") { console.error("Saúde não confirmada"); process.exit(1); } console.log(JSON.stringify({status:h.status, revision:h.revision, database:h.database, aiProviders:h.aiProviders, webSearchConfigured:h.webSearchConfigured, persistentLearningMemory:h.persistentLearningMemory}));'
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --max-time 20 https://jarvis-server-odpk.onrender.com/health -o /tmp/jarvis-health.json && node -e 'const f=require("fs"); const h=JSON.parse(f.readFileSync("/tmp/jarvis-health.json","utf8")); if(h.status!=="ok" || (process.env.GITHUB_EVENT_NAME==="push" && h.revision!==process.env.GITHUB_SHA)) process.exit(1); console.log(JSON.stringify({status:h.status, revision:h.revision, database:h.database, aiProviders:h.aiProviders, webSearchConfigured:h.webSearchConfigured, persistentLearningMemory:h.persistentLearningMemory}));'; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Não foi possível confirmar o serviço e a revisão esperada."
+          exit 1
