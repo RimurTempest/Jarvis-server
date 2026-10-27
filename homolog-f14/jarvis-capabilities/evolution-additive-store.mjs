@@ -196,6 +196,46 @@ export function createEvolutionStore(pool) {
       return { id: taskId, developmentAuthorized: true, newlyAuthorized: true };
     });
   }
+  /** Revoke development authority and fence the active reservation atomically. */
+  async function revokeDevelopment(ownerId, id) {
+    const owner = validOwner(ownerId);
+    const taskId = validId(id);
+    return tx(async db => {
+      const row = await db.query(
+        `SELECT state, development_authorized_at
+           FROM jarvis_supervised_v11_requests
+          WHERE id = $1 AND owner_id = $2 FOR UPDATE`, [taskId, owner]
+      );
+      const task = row.rows[0];
+      if (!task) throw httpError(404, "Solicitação não encontrada.");
+      if (!task.development_authorized_at && task.state === "blocked") {
+        const prior = await db.query(
+          `SELECT 1 FROM jarvis_supervised_v11_audit
+            WHERE request_id = $1 AND actor = 'owner' AND event = 'development_revoked' LIMIT 1`,
+          [taskId]
+        );
+        if (prior.rowCount === 1) return { id: taskId, revoked: true, newlyRevoked: false };
+      }
+      if (!task.development_authorized_at || !["requested", "claimed"].includes(task.state)) {
+        throw httpError(409, "Autorização não está ativa ou a solicitação já foi concluída.");
+      }
+      await db.query(
+        `UPDATE jarvis_supervised_v11_requests
+            SET state = 'blocked', development_authorized_at = NULL,
+                lease_hash = NULL, lease_expires_at = NULL, lease_started_at = NULL,
+                report = jsonb_build_object('summary', 'Autorização revogada pelo proprietário.',
+                  'testsExecuted', false, 'testsPassed', false, 'validatedByCi', false,
+                  'installed', false, 'learned', false), updated_at = NOW()
+          WHERE id = $1 AND owner_id = $2`, [taskId, owner]
+      );
+      await db.query(
+        `INSERT INTO jarvis_supervised_v11_audit (request_id, actor, event, details)
+         VALUES ($1, 'owner', 'development_revoked',
+           '{"publicationApproved":false,"installationApproved":false}'::jsonb)`, [taskId]
+      );
+      return { id: taskId, revoked: true, newlyRevoked: true };
+    });
+  }
   async function claim() {
     // Uma reserva que expirou após a terceira tentativa não pode ficar
     // eternamente em "claimed". O registro de auditoria e a mudança de estado
@@ -317,5 +357,5 @@ export function createEvolutionStore(pool) {
       return { ...updated.rows[0], learned: false, installed: false };
     });
   }
-  return { initialize, bindDevice, resolveOwner, create, list, authorize, claim, renewLease, report };
+  return { initialize, bindDevice, resolveOwner, create, list, authorize, revokeDevelopment, claim, renewLease, report };
 }
