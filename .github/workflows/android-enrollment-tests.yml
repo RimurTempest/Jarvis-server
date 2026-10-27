@@ -1,0 +1,47 @@
+name: JARVIS Android Enrollment Tests
+
+on:
+  push:
+    branches:
+      - feature/android-device-enrollment-foundation
+    paths:
+      - "jarvis-capabilities/android-device-registry.mjs"
+      - "jarvis-capabilities/android-action-routes.mjs"
+      - "jarvis-capabilities/android-pairing-page.mjs"
+      - "jarvis-capabilities/test/android-device-registry.test.mjs"
+      - "jarvis-capabilities/test/android-action-routes.test.mjs"
+      - "jarvis-capabilities/test/android-pairing-page.test.mjs"
+      - "server.js"
+      - ".github/workflows/android-enrollment-tests.yml"
+  pull_request:
+    paths:
+      - "jarvis-capabilities/**"
+      - "server.js"
+      - ".github/workflows/android-enrollment-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  android-enrollment-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check enrollment module syntax
+        run: |
+          node --check jarvis-capabilities/android-device-registry.mjs
+          node --check jarvis-capabilities/android-action-routes.mjs
+          node --check jarvis-capabilities/android-pairing-page.mjs
+          node --check jarvis-capabilities/test/android-pairing-page.test.mjs
+          node --check server.js
+          node --check jarvis-capabilities/test/android-device-registry.test.mjs
+          node --check jarvis-capabilities/test/android-action-routes.test.mjs
+      - name: Run enrollment and route tests
+        run: |
+          node --test jarvis-capabilities/test/android-device-registry.test.mjs
+          node --test jarvis-capabilities/test/android-action-routes.test.mjs
+          node --test jarvis-capabilities/test/android-pairing-page.test.mjs
+          node --test jarvis-capabilities/test/chat-auth-middleware.test.mjs

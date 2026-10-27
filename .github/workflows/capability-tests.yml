@@ -10,12 +10,29 @@ on:
   pull_request:
     paths:
       - "jarvis-capabilities/**"
+      - "server.js"
       - ".github/workflows/capability-tests.yml"
   workflow_dispatch:
 
 jobs:
   capability-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: jarvis_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d jarvis_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/jarvis_test
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,17 +40,27 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install server dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Check capability module syntax
         run: |
+          node --check server.js
+          node --check jarvis-capabilities/provider-failover-policy.mjs
+          node --check jarvis-capabilities/test/provider-failover-policy.test.mjs
           node --check jarvis-capabilities/capability-prompt-context.mjs
           node --check jarvis-capabilities/capability-registry.mjs
           node --check jarvis-capabilities/capability-validation-policy.mjs
           node --check jarvis-capabilities/capability-evidence-attestation.mjs
           node --check jarvis-capabilities/learning-intent.mjs
+          node --check jarvis-capabilities/explicit-learning.mjs
+          node --check jarvis-capabilities/test/explicit-learning.test.mjs
+          node --check jarvis-capabilities/capability-intent-classifier.mjs
           node --check jarvis-capabilities/android-action-protocol.mjs
           node --check jarvis-capabilities/android-device-auth.mjs
           node --check jarvis-capabilities/action-delivery.mjs
           node --check jarvis-capabilities/postgres-action-queue.mjs
+          node --check jarvis-capabilities/universal-task-android-adapters.mjs
+          node --check jarvis-capabilities/test/universal-task-android-adapters.test.mjs
           node --check jarvis-capabilities/android-action-routes.mjs
           node --check jarvis-capabilities/test/capability-registry.test.mjs
           node --check jarvis-capabilities/test/capability-validation-policy.test.mjs
@@ -44,15 +71,65 @@ jobs:
           node --check jarvis-capabilities/test/action-delivery.test.mjs
           node --check jarvis-capabilities/test/postgres-action-queue.test.mjs
           node --check jarvis-capabilities/test/android-action-routes.test.mjs
+          node --check jarvis-capabilities/secret-scanner.mjs
+          node --check jarvis-capabilities/self-improvement-auto-activation.mjs
+          node --check jarvis-capabilities/self-improvement-ci-repair.mjs
+          node --check jarvis-capabilities/self-improvement-code-generator.mjs
+          node --check jarvis-capabilities/self-improvement-github-context.mjs
+          node --check jarvis-capabilities/self-improvement-github-publisher.mjs
+          node --check jarvis-capabilities/self-improvement-github-validation.mjs
+          node --check jarvis-capabilities/self-improvement-pipeline.mjs
+          node --check jarvis-capabilities/self-improvement-proposal-policy.mjs
+          node --check jarvis-capabilities/self-improvement-run-queue.mjs
+          node --check jarvis-capabilities/self-improvement-runtime-guard.mjs
+          node --check jarvis-capabilities/self-improvement-readiness.mjs
+          node --check jarvis-capabilities/test/self-improvement-readiness.test.mjs
+          node --check jarvis-capabilities/self-improvement-target.mjs
+          node --check jarvis-capabilities/self-improvement-worker.mjs
+          node --check jarvis-capabilities/self-improvement-capability-sync.mjs
+          node --check jarvis-capabilities/test/self-improvement-capability-sync.test.mjs
+          node --check jarvis-capabilities/test/self-improvement-capability-recovery.integration.test.mjs
+          node --check jarvis-capabilities/universal-capability-execution.mjs
+          node --check jarvis-capabilities/universal-task-orchestrator.mjs
+          node --check jarvis-capabilities/test/universal-task-orchestrator.test.mjs
+          node --check jarvis-capabilities/test/universal-capability-execution.test.mjs
+          node --check jarvis-capabilities/universal-task-store.mjs
+          node --check jarvis-capabilities/universal-task-recovery.mjs
+          node --check jarvis-capabilities/test/universal-task-recovery.test.mjs
       - name: Run capability tests
         run: |
+          node --test jarvis-capabilities/test/provider-failover-policy.test.mjs
           node --test jarvis-capabilities/test/capability-prompt-context.test.mjs
           node --test jarvis-capabilities/test/capability-registry.test.mjs
           node --test jarvis-capabilities/test/capability-validation-policy.test.mjs
           node --test jarvis-capabilities/test/capability-evidence-attestation.test.mjs
           node --test jarvis-capabilities/test/learning-intent.test.mjs
+          node --test jarvis-capabilities/test/explicit-learning.test.mjs
+          node --test jarvis-capabilities/test/capability-intent-classifier.test.mjs
           node --test jarvis-capabilities/test/android-action-protocol.test.mjs
           node --test jarvis-capabilities/test/android-device-auth.test.mjs
           node --test jarvis-capabilities/test/action-delivery.test.mjs
           node --test jarvis-capabilities/test/postgres-action-queue.test.mjs
+          node --test jarvis-capabilities/test/universal-task-android-adapters.test.mjs
           node --test jarvis-capabilities/test/android-action-routes.test.mjs
+          node --test jarvis-capabilities/test/secret-scanner.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-auto-activation.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-ci-repair.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-code-generator.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-github-context.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-github-publisher.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-github-validation.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-pipeline.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-proposal-policy.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-run-queue.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-runtime-guard.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-readiness.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-server.integration.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-target.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-worker.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-capability-sync.test.mjs
+          node --test jarvis-capabilities/test/self-improvement-capability-recovery.integration.test.mjs
+          node --test jarvis-capabilities/test/universal-capability-execution.test.mjs
+          node --test jarvis-capabilities/test/universal-task-orchestrator.test.mjs
+          node --test jarvis-capabilities/test/universal-task-store.test.mjs
+          node --test jarvis-capabilities/test/universal-task-recovery.test.mjs
