@@ -9,7 +9,8 @@ import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, C
 import { detectCapabilityLearningRequest } from "./jarvis-capabilities/learning-intent.mjs";
 import { detectExplicitLearning } from "./jarvis-capabilities/explicit-learning.mjs";
 import { parseCapabilityIntentClassification, shouldClassifyCapabilityIntent } from "./jarvis-capabilities/capability-intent-classifier.mjs";
-import { initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
+import { enqueueAndroidAction, initializeActionQueue } from "./jarvis-capabilities/postgres-action-queue.mjs";
+import { proposeAndroidAction } from "./jarvis-capabilities/android-action-proposal.mjs";
 import { registerAndroidActionRoutes } from "./jarvis-capabilities/android-action-routes.mjs";
 import { registerAndroidPairingPage } from "./jarvis-capabilities/android-pairing-page.mjs";
 import { buildCapabilityPromptContext } from "./jarvis-capabilities/capability-prompt-context.mjs";
@@ -1816,11 +1817,6 @@ app.post("/api/chat", requireChatAuth, async (req, res) => {
     }
   }
 
-  const detectedLearningRequest = detectCapabilityLearningRequest(message) || await inferCapabilityLearningRequest(message);
-  const capabilityLearningRequest = detectedLearningRequest && !looksSensitive(detectedLearningRequest.goal)
-    ? detectedLearningRequest
-    : null;
-
   let userMessageId = null;
   try {
     const savedUserMessage = await pool.query(
@@ -1832,6 +1828,77 @@ app.post("/api/chat", requireChatAuth, async (req, res) => {
     console.error("Falha ao salvar mensagem:", error.message);
     return res.status(503).json({ error: "Não foi possível registrar a mensagem." });
   }
+
+  // Ações Android simples são separadas do fluxo de autoaperfeiçoamento:
+  // o modelo só propõe dados; a allowlist, o vínculo do dispositivo e a confirmação
+  // explícita no celular continuam obrigatórios.
+  let proposedAndroidAction = null;
+  try {
+    proposedAndroidAction = await proposeAndroidAction(providers[0], message);
+  } catch {
+    console.warn("Classificação de ação Android indisponível; tentando o provedor alternativo.");
+  }
+  if (!proposedAndroidAction && providers.length > 1) {
+    try {
+      proposedAndroidAction = await proposeAndroidAction(providers[1], message);
+    } catch {
+      // Falha fechada: o chat comum continua disponível.
+    }
+  }
+
+  if (proposedAndroidAction) {
+    let actionResponse;
+    try {
+      await initializeAndroidDeviceRegistry(pool);
+      const activeDevices = await pool.query(
+        "SELECT device_id FROM jarvis_android_devices WHERE revoked_at IS NULL ORDER BY created_at DESC LIMIT 2"
+      );
+
+      if (activeDevices.rowCount !== 1) {
+        actionResponse = activeDevices.rowCount === 0
+          ? "Entendi o pedido, Senhor, mas não coloquei a ação na fila: não encontrei um dispositivo Android vinculado e ativo neste servidor."
+          : "Entendi o pedido, Senhor, mas não coloquei a ação na fila: há mais de um dispositivo Android ativo. Por segurança, preciso de um destino inequívoco antes de enviar ações.";
+      } else {
+        const queued = await enqueueAndroidAction(pool, {
+          id: randomUUID(),
+          capabilityId: "android-basic-actions",
+          action: proposedAndroidAction,
+          targetDeviceId: activeDevices.rows[0].device_id,
+          expiresAt: new Date(Date.now() + 2 * 60 * 1000),
+        });
+
+        const descriptions = {
+          open_app: `abrir o aplicativo ${proposedAndroidAction.packageName}`,
+          open_url: `abrir o endereço ${proposedAndroidAction.url}`,
+          dial_number: `abrir o discador com o número ${proposedAndroidAction.phoneNumber}`,
+          open_settings: `abrir as configurações de ${proposedAndroidAction.setting}`,
+          copy_text: "copiar o texto solicitado",
+        };
+        actionResponse = `Preparei a ação para ${descriptions[proposedAndroidAction.type] || "o pedido informado"} e a enviei para a fila do dispositivo vinculado. Ela ainda não foi executada: abra o J.A.R.V.I.S. no celular e confirme a solicitação na tela. O aplicativo precisa estar em primeiro plano para receber a ação. A solicitação expira em aproximadamente dois minutos (ID ${queued.id}).`;
+      }
+    } catch (error) {
+      console.error("Falha ao enfileirar ação Android:", error?.message || "erro desconhecido");
+      actionResponse = "Reconheci o pedido de ação, Senhor, mas não consegui colocá-lo na fila com segurança. Nada foi executado no Android.";
+    }
+
+    try {
+      await saveMessage("assistant", actionResponse);
+    } catch (error) {
+      console.error("Falha ao salvar resposta da ação Android:", error?.message || "erro desconhecido");
+    }
+
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    sendEvent(res, "delta", { text: actionResponse });
+    sendEvent(res, "done", {});
+    return res.end();
+  }
+
+  const detectedLearningRequest = detectCapabilityLearningRequest(message) || await inferCapabilityLearningRequest(message);
+  const capabilityLearningRequest = detectedLearningRequest && !looksSensitive(detectedLearningRequest.goal)
+    ? detectedLearningRequest
+    : null;
 
   let capabilityContext = "";
   let activeCapability = null;
