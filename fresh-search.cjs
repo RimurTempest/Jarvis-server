@@ -2,7 +2,7 @@
 
 // Busca sem Exa: Tavily opcional + fontes publicas de noticias.
 // Nunca interpreta "nenhum resultado" como prova de que uma noticia e falsa.
-const NEWS = /\b(noticia|noticias|noticiario|hoje|ontem|anteontem|agora|atual|atualmente|recente|ultimas|ultima|aconteceu|acontecendo|chegou|fugiu|viajou|morreu|preso|prisao|eleicao|eleicoes|governo|anunciou|anuncio|investigacao|foi|esta|estao)\b/i;
+const NEWS = /\b(noticia|noticias|noticiario|hoje|ontem|anteontem|agora|atual|atualmente|recente|ultimas|ultima|aconteceu|acontecendo|chegou|fugiu|viajou|morreu|preso|prisao|eleicao|eleicoes|governo|anunciou|anuncio|investigacao|estar|esteve|saiu|partiu|desembarcou|viagem|boato|rumor)\b/i;
 const STOPS = new Set(("a o os as um uma uns umas de do da dos das para por que qual quais como quando onde porque " +
   "na no nos nas em ao aos com sobre entre este esta estes essas essa isso aquilo quem " +
   "me diga conte explique pesquise pesquisar pesquisa verifique confirme saber " +
