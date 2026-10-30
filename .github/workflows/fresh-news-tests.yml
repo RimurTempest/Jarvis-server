@@ -1,0 +1,21 @@
+name: JARVIS - fontes atualizadas (testes isolados)
+on:
+  pull_request:
+    paths:
+      - 'fresh-search.cjs'
+      - 'server.js'
+      - 'test/fresh-search.test.cjs'
+      - '.github/workflows/fresh-news-tests.yml'
+permissions:
+  contents: read
+jobs:
+  research-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check server.js
+      - run: node --check fresh-search.cjs
+      - run: node --test test/fresh-search.test.cjs
