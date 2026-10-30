@@ -15,7 +15,11 @@ function normalize(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 function isNewsQuery(message) {
-  return NEWS.test(normalize(message));
+  const text = normalize(message);
+  // Nao tratar precos, tempo ou cotacoes de hoje como manchetes de jornal.
+  if (/\b(preco|precos|quanto custa|cotacao|clima|previsao do tempo|temperatura)\b/.test(text) &&
+      !/\b(noticia|noticias|anunciou|anuncio|aconteceu|chegou|fugiu)\b/.test(text)) return false;
+  return NEWS.test(text);
 }
 function terms(message) {
   return (normalize(message).match(/[a-z0-9]{2,}/g) || [])
