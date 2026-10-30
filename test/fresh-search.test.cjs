@@ -55,6 +55,7 @@ test("nenhum resultado nunca vira desmentido", async () => {
 });
 test("sem chave nao simula pesquisa web geral", async () => {
   const result = await searchFreshWeb("preço de notebook hoje?", { fetchImpl: () => { throw Error("Nao deveria consultar"); }, tavilyApiKey: "" });
-  // Consultas temporais sao consideradas noticias e podem buscar fontes publicas.
-  assert.equal(typeof result.available, "boolean");
+  assert.equal(isNewsQuery("preço de notebook hoje?"), false);
+  assert.equal(result.attempted, false);
+  assert.equal(result.available, false);
 });
