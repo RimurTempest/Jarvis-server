@@ -2350,6 +2350,11 @@ let selfImprovementWorker = null;
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`JARVIS online na porta ${PORT}`);
+  // Owner-requested one-time per-deploy Environment audit via PRIVATE Render
+  // logs. Log only allowlisted variable NAMES; never values or credentials.
+  const redacted = configuredJarvisEnvInventory(process.env);
+  const namesOnly = redacted.variables.filter((v) => v.configured).map((v) => v.name);
+  console.info("[JARVIS_ENV_AUDIT_NAMES_ONLY]", JSON.stringify(namesOnly));
 });
 if (process.env.JARVIS_GITHUB_ACCESS_DIAGNOSTICS === "true") {
   void logSafeGitHubAccessDiagnostics().catch(() => {
