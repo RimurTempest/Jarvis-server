@@ -17,7 +17,7 @@ const allSeven = [
   candidate("NVIDIA", "model-v1", "integrate.api.nvidia.com"),
   candidate("ZAI", "glm-test", "api.z.ai"),
   candidate("OpenRouter", "example/model:free", "openrouter.ai"),
-  candidate("Cloudflare", "cf/test", "api.cloudflare.com"),
+  candidate("Cloudflare", "@cf/meta/llama-3.3-70b-instruct", "api.cloudflare.com"),
   candidate("Groq", "openai/gpt-oss-20b", "api.groq.com"),
   candidate("Gemini", "gemini-test", "generativelanguage.googleapis.com"),
 ];
