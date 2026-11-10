@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
+import { freeChatPolicy, chooseFreeChatProvider, validateFreeChatMessage, reserveFreeChatDailyQuota } from "./jarvis-capabilities/free-chat-policy.mjs";
 import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 import { randomUUID } from "node:crypto";
 import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext, runProvidersSequentially } from "./jarvis-capabilities/provider-failover-policy.mjs";
@@ -1840,6 +1841,111 @@ app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => 
   } catch (error) {
     console.error("Falha ao consultar notificações de autoaperfeiçoamento:", error?.name || "Error");
     return res.status(503).json({ error: "Não foi possível consultar o status das novas habilidades." });
+  }
+});
+
+/**
+ * Separate read-only conversation endpoint for opted-in free-tier tests.
+ * The regular /api/chat route can generate capability tasks; this route cannot.
+ * A server admin key never authenticates a phone here: only a paired, revocable
+ * Android device credential can consume the tightly bounded single provider.
+ */
+async function requirePairedFreeChatDevice(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = /^Bearer\s+([^\s]{32,200})$/i.exec(header)?.[1];
+  const deviceId = req.headers["x-jarvis-device-id"];
+  if (!pool || !token || typeof deviceId !== "string" || !deviceId) {
+    return res.status(401).json({ error: "Pareamento Android necessário." });
+  }
+  try {
+    await initializeDatabase();
+    await initializeAndroidDeviceRegistry(pool);
+    const result = await authenticateAndroidDevice(pool, { deviceId, token });
+    if (!result.ok) return res.status(401).json({ error: "Dispositivo não autorizado." });
+    req.freeChatDeviceId = deviceId;
+    return next();
+  } catch {
+    return res.status(503).json({ error: "Autenticação de dispositivo indisponível." });
+  }
+}
+
+app.get("/api/chat/safe/status", requirePairedFreeChatDevice, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  return res.json({ schemaVersion: 1, ...freeChatPolicy(process.env, providers) });
+});
+
+app.post("/api/chat/safe", requirePairedFreeChatDevice, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  const policy = freeChatPolicy(process.env, providers);
+  if (!policy.enabled) {
+    return res.status(503).json({
+      error: "A conversa gratuita ainda não foi autorizada ou configurada no servidor.",
+      code: "FREE_CHAT_DISABLED",
+    });
+  }
+  let message;
+  try {
+    message = validateFreeChatMessage(req.body?.message);
+  } catch {
+    return res.status(400).json({ error: "Mensagem inválida ou muito longa." });
+  }
+  // No chat persistence or self-improvement side effects. Daily quota is
+  // durable in PostgreSQL; it is consumed even on errors to prevent retry storms.
+  let quota;
+  try {
+    quota = await reserveFreeChatDailyQuota(pool, req.freeChatDeviceId);
+  } catch {
+    return res.status(503).json({ error: "Limite gratuito indisponível. Nada foi enviado à IA." });
+  }
+  if (!quota.accepted) {
+    return res.status(429).json({ error: "Limite diário de conversa atingido.", code: "FREE_DAILY_LIMIT" });
+  }
+  try {
+    // Use EXISTING preconfigured provider clients, but only exact models
+    // approved as free by the owner. Never call the generic fallback.
+    // One approved provider per request, no automatic retries.
+    const selected = chooseFreeChatProvider(process.env, providers, quota.used);
+    if (!selected) {
+      return res.status(503).json({ error: "Nenhum modelo gratuito foi autorizado." });
+    }
+    const response = await selected.client.chat.completions.create({
+      model: selected.model,
+      ...(selected.name.toLowerCase() === "groq"
+        ? { max_completion_tokens: policy.maxOutputTokens }
+        : { max_tokens: policy.maxOutputTokens }),
+      stream: false,
+      messages: [
+        {
+          role: "system",
+          content: "Você é JARVIS. Responda em português do Brasil, de forma útil, objetiva e respeitosa, chamando o usuário de Senhor quando natural. Esta sessão é apenas conversação: não há ferramentas, pesquisa, memória persistente nem controle do Android. Nunca afirme que realizou ações, buscou notícias ou guardou dados. Diga quando não souber. Não solicite senhas ou tokens.",
+        },
+        { role: "user", content: message },
+      ],
+    });
+    const reply = response.choices?.[0]?.message?.content;
+    if (typeof reply !== "string" || !reply.trim()) {
+      return res.status(502).json({ error: "O modelo gratuito não retornou texto." });
+    }
+    return res.json({
+      schemaVersion: 1,
+      response: reply.trim().slice(0, 3000),
+      provider: selected.name,
+      model: selected.model,
+      freeOnly: true,
+      remainingToday: Math.max(0, quota.limit - quota.used),
+      executedActions: false,
+      persisted: false,
+    });
+  } catch (error) {
+    const status = Number(error?.status);
+    // Never retry with a paid provider or leak backend credentials.
+    if (status === 429) return res.status(429).json({
+      error: "O provedor gratuito atingiu o limite. Nenhuma alternativa paga será usada.",
+      code: "PROVIDER_RATE_LIMIT",
+    });
+    console.error("[free-chat] provider_unavailable", error?.name || "Error");
+    return res.status(503).json({ error: "IA gratuita indisponível. Nenhum provedor pago foi chamado." });
   }
 });
 
