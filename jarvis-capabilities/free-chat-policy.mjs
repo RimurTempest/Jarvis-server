@@ -42,7 +42,7 @@ export function approvedFreeChatProviders(env = {}, configuredProviders = []) {
     const model = pair?.model;
     if (!Object.hasOwn(ENDPOINT_HOSTS, name) ||
         typeof model !== "string" || model.length < 1 || model.length > 200 ||
-        model.trim() !== model || !/^[a-zA-Z0-9._:/+-]+$/.test(model) ||
+        model.trim() !== model || !/^[a-zA-Z0-9@._:/+-]+$/.test(model) ||
         (name === "openrouter" && !model.endsWith(":free"))) {
       // One bad entry invalidates the entire approval list.
       return [];
