@@ -244,3 +244,65 @@ export async function researchBySpecialty(query, options = {}) {
     category: kind,
   };
 }
+
+
+const DAILY_RESEARCH_LIMIT = 6;
+let researchTableReady = null;
+
+/** Every explicit lookup has a durable per-device quota, even if only public feeds are used. */
+export async function reserveResearchDailyQuota(pool, deviceId) {
+  if (!pool?.query || typeof deviceId !== "string" ||
+      !/^[a-z0-9][a-z0-9._:-]{0,119}$/i.test(deviceId)) {
+    throw new TypeError("Pesquisa não autorizada para este dispositivo.");
+  }
+  if (!researchTableReady) {
+    researchTableReady = pool.query(\`CREATE TABLE IF NOT EXISTS jarvis_research_daily (
+      device_id TEXT NOT NULL, day_utc DATE NOT NULL,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (device_id, day_utc)
+    )\`).catch((e) => { researchTableReady = null; throw e; });
+  }
+  await researchTableReady;
+  const result = await pool.query(
+    \`INSERT INTO jarvis_research_daily (device_id, day_utc, request_count)
+     VALUES ($1, (NOW() AT TIME ZONE 'UTC')::date, 1)
+     ON CONFLICT (device_id, day_utc)
+     DO UPDATE SET request_count = jarvis_research_daily.request_count + 1
+       WHERE jarvis_research_daily.request_count < $2
+     RETURNING request_count\`,
+    [deviceId, DAILY_RESEARCH_LIMIT]
+  );
+  return {
+    accepted: result.rowCount === 1,
+    used: result.rowCount === 1 ? Number(result.rows[0].request_count) : DAILY_RESEARCH_LIMIT,
+    limit: DAILY_RESEARCH_LIMIT,
+  };
+}
+
+/** Names/presence only, never any value. Only a paired device may request it. */
+export function configuredJarvisEnvInventory(env = {}) {
+  const relevant = /^(JARVIS_|GROQ_|EXA_|TAVILY_|OPENAI_|HUGGING|HF_|NVIDIA_|ZAI_|OPENROUTER_|CLOUDFLARE_|CF_|GEMINI_|GOOGLE_|DATABASE_URL$)/;
+  const configured = Object.keys(env).filter((k) => relevant.test(k)).sort();
+  const essential = [
+    "DATABASE_URL", "EXA_API_KEY", "TAVILY_API_KEY", "GROQ_API_KEY",
+    "JARVIS_FREE_CHAT_ENABLED", "JARVIS_FREE_CHAT_CONFIRMED_FREE_PLAN",
+    "JARVIS_FREE_CHAT_APPROVED_MODELS_JSON",
+    "JARVIS_SEARCH_TAVILY_ENABLED", "JARVIS_SEARCH_TAVILY_FREE_ATTESTED",
+    "JARVIS_SEARCH_EXA_ENABLED", "JARVIS_SEARCH_EXA_FREE_ATTESTED",
+    "JARVIS_API_TOKEN", "JARVIS_ANDROID_ENROLLMENT_ADMIN_TOKEN",
+  ];
+  for (let n = 1; n <= 10; n++) {
+    for (const suffix of ["NAME", "MODEL", "BASE_URL", "API_KEY"]) {
+      essential.push(\`JARVIS_PROVIDER_\${n}_\${suffix}\`);
+    }
+  }
+  const names = [...new Set([...configured, ...essential])].sort();
+  return {
+    redacted: true,
+    keyCount: configured.length,
+    variables: names.map((name) => ({
+      name,
+      configured: Object.hasOwn(env, name) && String(env[name] ?? "").length > 0,
+    })),
+  };
+}
