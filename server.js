@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
+import { researchBySpecialty, researchRouterPolicy } from "./jarvis-research/research-router.mjs";
 import { freeChatPolicy, chooseFreeChatProvider, validateFreeChatMessage, reserveFreeChatDailyQuota } from "./jarvis-capabilities/free-chat-policy.mjs";
 import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 import { randomUUID } from "node:crypto";
@@ -266,58 +267,8 @@ function cleanWebText(value, maxLength = MAX_WEB_TEXT_PER_RESULT) {
 }
 
 async function searchWeb(message) {
-  const apiKey = process.env.EXA_API_KEY;
-  if (!apiKey) {
-    return { attempted: false, available: false, results: [], reason: "EXA_API_KEY não configurada" };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), EXA_TIMEOUT_MS);
-  timeout.unref?.();
-
-  try {
-    const response = await fetch(EXA_SEARCH_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        query: buildSearchQuery(message),
-        type: "auto",
-        numResults: MAX_WEB_RESULTS,
-        contents: { text: { maxCharacters: MAX_WEB_TEXT_PER_RESULT } },
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      // Não registra nem devolve a chave, nem o corpo completo do provedor.
-      console.error(`Pesquisa Exa falhou com HTTP ${response.status}.`);
-      return { attempted: true, available: false, results: [], reason: `Exa HTTP ${response.status}` };
-    }
-
-    const data = await response.json();
-    const results = (Array.isArray(data?.results) ? data.results : [])
-      .map((item) => ({
-        title: cleanWebText(item?.title, 240) || "Fonte sem título",
-        url: safeHttpUrl(item?.url),
-        publishedDate: cleanWebText(item?.publishedDate, 80),
-        author: cleanWebText(item?.author, 120),
-        text: cleanWebText(item?.text || item?.summary || (Array.isArray(item?.highlights) ? item.highlights.join(" ") : "")),
-      }))
-      .filter((item) => item.url)
-      .slice(0, MAX_WEB_RESULTS);
-
-    return { attempted: true, available: results.length > 0, results, reason: results.length ? null : "Nenhum resultado útil retornado" };
-  } catch (error) {
-    const reason = error?.name === "AbortError" ? "tempo limite excedido" : "falha de conexão";
-    console.error(`Pesquisa Exa indisponível: ${reason}.`);
-    return { attempted: true, available: false, results: [], reason };
-  } finally {
-    clearTimeout(timeout);
-  }
+  // Keyless EBC and GDELT; Tavily/Exa only with verified-free owner opt-in.
+  return researchBySpecialty(buildSearchQuery(message), { env: process.env });
 }
 
 function formatWebResearch(webSearch) {
@@ -791,7 +742,8 @@ function selfImprovementPipelineEnabled() {
   return process.env.JARVIS_SELF_IMPROVEMENT_ENABLED === "true" &&
     Boolean(pool) &&
     providers.length > 0 &&
-    Boolean(process.env.EXA_API_KEY) &&
+    (Boolean(process.env.EXA_API_KEY) ||
+      process.env.JARVIS_EVOLUTION_RESEARCH_ENABLED === "true") &&
     typeof token === "string" && token.trim().length >= 20;
 }
 
@@ -1381,7 +1333,8 @@ app.get("/health", async (_req, res) => {
     revision: process.env.RENDER_GIT_COMMIT || process.env.GITHUB_SHA || null,
     database,
     aiProviders: providers.length,
-    webSearchConfigured: Boolean(process.env.EXA_API_KEY),
+    webSearchConfigured: researchRouterPolicy(process.env).researchers.some((r) => r.enabled),
+    researchBySpecialty: true,
     persistentLearningMemory: learningMemoryReady,
   });
 });
@@ -1425,7 +1378,7 @@ async function requireSkillsReadAuth(req, res, next) {
 function currentSkillsCatalog() {
   return buildSkillsCatalog({
     chatReady: Boolean(pool && providers.length),
-    researchReady: Boolean(process.env.EXA_API_KEY),
+    researchReady: researchRouterPolicy(process.env).researchers.some((r) => r.enabled),
     memoryReady: Boolean(pool && databaseInitialized),
   });
 }
