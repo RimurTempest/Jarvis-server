@@ -289,7 +289,7 @@ export async function reserveResearchDailyQuota(pool, deviceId) {
 
 /** Names/presence only, never any value. Only a paired device may request it. */
 export function configuredJarvisEnvInventory(env = {}) {
-  const relevant = /^(JARVIS_|GROQ_|EXA_|TAVILY_|OPENAI_|HUGGING|HF_|NVIDIA_|ZAI_|OPENROUTER_|CLOUDFLARE_|CF_|GEMINI_|GOOGLE_|DATABASE_URL$)/;
+  const relevant = /^(JARVIS_|GROQ_|EXA_|TAVILY_|OPENAI_|HUGGING|HF_|NVIDIA_|ZAI_|OPENROUTER_|CLOUDFLARE_|CF_|GEMINI_|GOOGLE_|GDELT_|EBC_|AGENCIA_BRASIL_|BRAVE_|SERPAPI_|SERPER_|BING_|NEWSAPI_|NEWS_API_|FIRECRAWL_|PERPLEXITY_|MEDIASTACK_|SEARCH_|RESEARCH_|DATABASE_URL$)/;
   const configured = Object.keys(env).filter((k) => relevant.test(k)).sort();
   const essential = [
     "DATABASE_URL", "EXA_API_KEY", "TAVILY_API_KEY", "GROQ_API_KEY",
@@ -298,6 +298,8 @@ export function configuredJarvisEnvInventory(env = {}) {
     "JARVIS_SEARCH_TAVILY_ENABLED", "JARVIS_SEARCH_TAVILY_FREE_ATTESTED",
     "JARVIS_SEARCH_EXA_ENABLED", "JARVIS_SEARCH_EXA_FREE_ATTESTED",
     "JARVIS_API_TOKEN", "JARVIS_ANDROID_ENROLLMENT_ADMIN_TOKEN",
+    "BRAVE_SEARCH_API_KEY", "SERPER_API_KEY", "SERPAPI_API_KEY", "NEWSAPI_API_KEY",
+    "GDELT_API_KEY", "GOOGLE_CSE_API_KEY", "FIRECRAWL_API_KEY",
   ];
   for (let n = 1; n <= 10; n++) {
     for (const suffix of ["NAME", "MODEL", "BASE_URL", "API_KEY"]) {
