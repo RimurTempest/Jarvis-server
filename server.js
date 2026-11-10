@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
+import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 
 const { Pool } = pg;
 const app = express();
@@ -685,6 +686,44 @@ app.get("/health", async (_req, res) => {
     aiProviders: providers.length,
     webSearchConfigured: Boolean(process.env.EXA_API_KEY),
     persistentLearningMemory: database === "connected" && databaseInitialized,
+  });
+});
+
+// Dedicated read-only skills scope. The master chat token is intentionally NOT
+// accepted here. Even a valid catalog token never authorizes an Android action.
+function requireSkillsReadAuth(req, res, next) {
+  if (!validSkillsToken(req.headers.authorization, process.env.JARVIS_SKILLS_READ_TOKEN)) {
+    return res.status(401).json({ error: "Não autorizado para consultar habilidades." });
+  }
+  return next();
+}
+
+function currentSkillsCatalog() {
+  return buildSkillsCatalog({
+    chatReady: Boolean(pool && providers.length > 0),
+    researchReady: Boolean(process.env.EXA_API_KEY),
+    memoryReady: Boolean(pool && databaseInitialized),
+  });
+}
+
+app.get("/api/skills", requireSkillsReadAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  return res.status(200).json(currentSkillsCatalog());
+});
+
+app.post("/api/skills/resolve", requireSkillsReadAuth, (req, res) => {
+  const utterance = req.body?.utterance;
+  if (typeof utterance !== "string" || !utterance.trim() || utterance.length > 500) {
+    return res.status(400).json({ error: "Fala inválida ou muito longa." });
+  }
+  const catalog = currentSkillsCatalog();
+  const suggestion = resolveSkillSuggestion(utterance, catalog);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  return res.status(200).json({
+    schemaVersion: 1,
+    ...suggestion,
   });
 });
 
