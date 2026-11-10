@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
+import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 import { randomUUID } from "node:crypto";
 import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext, runProvidersSequentially } from "./jarvis-capabilities/provider-failover-policy.mjs";
 import { createCapabilityRequest, transitionCapability, capabilityCanBeReused, CAPABILITY_STATES } from "./jarvis-capabilities/capability-registry.mjs";
@@ -1382,6 +1383,68 @@ app.get("/health", async (_req, res) => {
     webSearchConfigured: Boolean(process.env.EXA_API_KEY),
     persistentLearningMemory: learningMemoryReady,
   });
+});
+
+// Skills v1 is a strictly read-only capability catalog. Authentication is
+// scoped: an independently configured skills-read token OR an already enrolled
+// Android device token. The master AI/chat and enrollment-admin tokens are not
+// accepted as a substitute for the dedicated catalog credential.
+async function requireSkillsReadAuth(req, res, next) {
+  const catalogToken = process.env.JARVIS_SKILLS_READ_TOKEN;
+  const distinctCatalogToken = typeof catalogToken === "string" &&
+    catalogToken !== process.env.JARVIS_API_TOKEN &&
+    catalogToken !== process.env.JARVIS_ANDROID_ENROLLMENT_ADMIN_TOKEN;
+  if (distinctCatalogToken && validSkillsToken(req.headers.authorization, catalogToken)) {
+    return next();
+  }
+
+  const header = req.headers.authorization || "";
+  const match = /^Bearer\\s+([^\\s]+)$/i.exec(header);
+  const deviceId = req.headers["x-jarvis-device-id"];
+  if (!pool || !match || typeof deviceId !== "string" || !deviceId) {
+    return res.status(401).json({ error: "Catálogo de habilidades não autorizado." });
+  }
+
+  try {
+    await initializeDatabase();
+    await initializeAndroidDeviceRegistry(pool);
+    const result = await authenticateAndroidDevice(pool, {
+      deviceId, token: match[1],
+    });
+    if (!result.ok) {
+      return res.status(401).json({ error: "Dispositivo não autorizado para o catálogo." });
+    }
+    return next();
+  } catch (error) {
+    console.error("Falha ao autenticar consulta do catálogo:", error?.name || "Error");
+    return res.status(503).json({ error: "Autenticação do catálogo indisponível." });
+  }
+}
+
+function currentSkillsCatalog() {
+  return buildSkillsCatalog({
+    chatReady: Boolean(pool && providers.length),
+    researchReady: Boolean(process.env.EXA_API_KEY),
+    memoryReady: Boolean(pool && databaseInitialized),
+  });
+}
+
+app.get("/api/skills", requireSkillsReadAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  return res.status(200).json(currentSkillsCatalog());
+});
+
+app.post("/api/skills/resolve", requireSkillsReadAuth, (req, res) => {
+  const utterance = req.body?.utterance;
+  if (typeof utterance !== "string" || !utterance.trim() || utterance.length > 500) {
+    return res.status(400).json({ error: "Fala inválida ou muito longa." });
+  }
+  const catalog = currentSkillsCatalog();
+  const suggestion = resolveSkillSuggestion(utterance, catalog);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  return res.status(200).json({ schemaVersion: 1, ...suggestion });
 });
 
 app.get("/api/self-improvement/status", requireAuth, async (_req, res) => {
