@@ -92,6 +92,14 @@ export function researchRouterPolicy(env = {}) {
   };
 }
 
+export function validateResearchQuery(raw) {
+  if (typeof raw !== "string" || raw.trim().length < 3 ||
+      raw.length > 180 || /[\u0000-\u001f\u007f]/.test(raw)) {
+    throw new TypeError("Consulta inválida: use de 3 a 180 caracteres sem controles.");
+  }
+  return raw.trim();
+}
+
 export function classifyResearchQuery(raw) {
   const query = safeText(raw, 180);
   if (query.length < 3) return "invalid";
