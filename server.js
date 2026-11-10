@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
-import { researchBySpecialty, researchRouterPolicy, reserveResearchDailyQuota, configuredJarvisEnvInventory } from "./jarvis-research/research-router.mjs";
+import { researchBySpecialty, researchRouterPolicy, reserveResearchDailyQuota, configuredJarvisEnvInventory, validateResearchQuery } from "./jarvis-research/research-router.mjs";
 import { freeChatPolicy, chooseFreeChatProvider, validateFreeChatMessage, reserveFreeChatDailyQuota } from "./jarvis-capabilities/free-chat-policy.mjs";
 import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 import { randomUUID } from "node:crypto";
@@ -742,8 +742,7 @@ function selfImprovementPipelineEnabled() {
   return process.env.JARVIS_SELF_IMPROVEMENT_ENABLED === "true" &&
     Boolean(pool) &&
     providers.length > 0 &&
-    (Boolean(process.env.EXA_API_KEY) ||
-      process.env.JARVIS_EVOLUTION_RESEARCH_ENABLED === "true") &&
+    Boolean(process.env.EXA_API_KEY) &&
     typeof token === "string" && token.trim().length >= 20;
 }
 
@@ -1845,9 +1844,10 @@ app.get("/api/research/status", requirePairedFreeChatDevice, (_req, res) => {
 app.post("/api/research/query", requirePairedFreeChatDevice, async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
-  const query = req.body?.query;
-  if (typeof query !== "string" || query.length < 3 || query.length > 180 ||
-      /[\\u0000-\\u001f]/.test(query)) {
+  let query;
+  try {
+    query = validateResearchQuery(req.body?.query);
+  } catch {
     return res.status(400).json({ error: "Consulta inválida: use entre 3 e 180 caracteres." });
   }
   let quota;
