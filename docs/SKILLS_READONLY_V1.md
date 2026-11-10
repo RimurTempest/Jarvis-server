@@ -14,10 +14,12 @@ serviços remunerados.
   `executed=false` e `requiresOwnerConfirmation`.
   A resposta **não executa** a sugestão.
 
-Ambas exigem cabeçalho HTTP
-`Authorization: Bearer <JARVIS_SKILLS_READ_TOKEN>`.
-Uma credencial `JARVIS_API_TOKEN` válida para chat **não serve**
-para essas rotas; são escopos distintos.
+Ambas exigem uma das seguintes autenticações:
+
+- **Aparelho já pareado:** cabeçalhos `Authorization: Bearer <token_do_dispositivo>` e `X-Jarvis-Device-Id`; vínculo e revogação são verificados contra o registro Android no PostgreSQL.
+- **Instalação de testes ainda sem pareamento:** cabeçalho `Authorization: Bearer <JARVIS_SKILLS_READ_TOKEN>` com chave exclusiva de leitura configurada no Render.
+
+Uma credencial `JARVIS_API_TOKEN` do chat e a chave administrativa de pareamento **não substituem** o token de catálogo. O servidor rejeita a configuração do token de leitura se seu valor coincidir com essas chaves.
 
 ## Configuração no Render
 
@@ -31,7 +33,8 @@ para essas rotas; são escopos distintos.
    A aplicação guarda a credencial cifrada usando Android Keystore,
    separadamente do pareamento do dispositivo.
 5. Para revogar, substituir ou apagar o token no Render e limpar a
-   credencial do app.
+   credencial do app. Um dispositivo já pareado pode usar o próprio token
+   revogável, sem exigir esta variável nova.
 
 Sem a variável configurada, as rotas respondem HTTP 401. Não há
 acesso anônimo nem chave padrão.
