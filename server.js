@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
+import { researchBySpecialty, researchRouterPolicy, reserveResearchDailyQuota, configuredJarvisEnvInventory, validateResearchQuery } from "./jarvis-research/research-router.mjs";
 import { freeChatPolicy, chooseFreeChatProvider, validateFreeChatMessage, reserveFreeChatDailyQuota } from "./jarvis-capabilities/free-chat-policy.mjs";
 import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 import { randomUUID } from "node:crypto";
@@ -266,58 +267,8 @@ function cleanWebText(value, maxLength = MAX_WEB_TEXT_PER_RESULT) {
 }
 
 async function searchWeb(message) {
-  const apiKey = process.env.EXA_API_KEY;
-  if (!apiKey) {
-    return { attempted: false, available: false, results: [], reason: "EXA_API_KEY não configurada" };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), EXA_TIMEOUT_MS);
-  timeout.unref?.();
-
-  try {
-    const response = await fetch(EXA_SEARCH_URL, {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        query: buildSearchQuery(message),
-        type: "auto",
-        numResults: MAX_WEB_RESULTS,
-        contents: { text: { maxCharacters: MAX_WEB_TEXT_PER_RESULT } },
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      // Não registra nem devolve a chave, nem o corpo completo do provedor.
-      console.error(`Pesquisa Exa falhou com HTTP ${response.status}.`);
-      return { attempted: true, available: false, results: [], reason: `Exa HTTP ${response.status}` };
-    }
-
-    const data = await response.json();
-    const results = (Array.isArray(data?.results) ? data.results : [])
-      .map((item) => ({
-        title: cleanWebText(item?.title, 240) || "Fonte sem título",
-        url: safeHttpUrl(item?.url),
-        publishedDate: cleanWebText(item?.publishedDate, 80),
-        author: cleanWebText(item?.author, 120),
-        text: cleanWebText(item?.text || item?.summary || (Array.isArray(item?.highlights) ? item.highlights.join(" ") : "")),
-      }))
-      .filter((item) => item.url)
-      .slice(0, MAX_WEB_RESULTS);
-
-    return { attempted: true, available: results.length > 0, results, reason: results.length ? null : "Nenhum resultado útil retornado" };
-  } catch (error) {
-    const reason = error?.name === "AbortError" ? "tempo limite excedido" : "falha de conexão";
-    console.error(`Pesquisa Exa indisponível: ${reason}.`);
-    return { attempted: true, available: false, results: [], reason };
-  } finally {
-    clearTimeout(timeout);
-  }
+  // Keyless EBC and GDELT; Tavily/Exa only with verified-free owner opt-in.
+  return researchBySpecialty(buildSearchQuery(message), { env: process.env });
 }
 
 function formatWebResearch(webSearch) {
@@ -1381,7 +1332,8 @@ app.get("/health", async (_req, res) => {
     revision: process.env.RENDER_GIT_COMMIT || process.env.GITHUB_SHA || null,
     database,
     aiProviders: providers.length,
-    webSearchConfigured: Boolean(process.env.EXA_API_KEY),
+    webSearchConfigured: researchRouterPolicy(process.env).researchers.some((r) => r.enabled),
+    researchBySpecialty: true,
     persistentLearningMemory: learningMemoryReady,
   });
 });
@@ -1425,7 +1377,7 @@ async function requireSkillsReadAuth(req, res, next) {
 function currentSkillsCatalog() {
   return buildSkillsCatalog({
     chatReady: Boolean(pool && providers.length),
-    researchReady: Boolean(process.env.EXA_API_KEY),
+    researchReady: researchRouterPolicy(process.env).researchers.some((r) => r.enabled),
     memoryReady: Boolean(pool && databaseInitialized),
   });
 }
@@ -1868,6 +1820,67 @@ async function requirePairedFreeChatDevice(req, res, next) {
     return res.status(503).json({ error: "Autenticação de dispositivo indisponível." });
   }
 }
+
+// Authenticated owner-only configuration audit: NEVER return environment values.
+// The Android preview uses this before enabling live researched answers.
+app.get("/api/research/status", requirePairedFreeChatDevice, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  return res.json({
+    schemaVersion: 1,
+    service: "JARVIS",
+    policy: researchRouterPolicy(process.env),
+    environment: configuredJarvisEnvInventory(process.env),
+    providers: providers.map((p) => ({
+      name: p.name,
+      model: p.model,
+      configured: true,
+    })),
+    noSecretValues: true,
+    maxResearchRequestsPerDay: 6,
+  });
+});
+
+app.post("/api/research/query", requirePairedFreeChatDevice, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  let query;
+  try {
+    query = validateResearchQuery(req.body?.query);
+  } catch {
+    return res.status(400).json({ error: "Consulta inválida: use entre 3 e 180 caracteres." });
+  }
+  let quota;
+  try {
+    quota = await reserveResearchDailyQuota(pool, req.freeChatDeviceId);
+  } catch {
+    return res.status(503).json({ error: "Cota de pesquisa indisponível. Nada foi pesquisado." });
+  }
+  if (!quota.accepted) {
+    return res.status(429).json({ error: "Limite de seis pesquisas por dia atingido." });
+  }
+  try {
+    const found = await researchBySpecialty(query, { env: process.env });
+    return res.json({
+      schemaVersion: 1,
+      category: found.category,
+      results: found.results.map((source) => ({
+        title: source.title, url: source.url,
+        publishedDate: source.publishedDate, text: source.text,
+        researcher: source.researcher,
+      })),
+      available: found.available,
+      reason: found.reason,
+      researchers: found.researchers,
+      remainingToday: quota.limit - quota.used,
+      executedActions: false,
+      persistedConversation: false,
+      freeOnly: true,
+    });
+  } catch {
+    return res.status(503).json({ error: "Pesquisadores indisponíveis. Não foi possível confirmar fontes." });
+  }
+});
 
 app.get("/api/chat/safe/status", requirePairedFreeChatDevice, (req, res) => {
   res.setHeader("Cache-Control", "no-store");
@@ -2337,6 +2350,11 @@ let selfImprovementWorker = null;
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`JARVIS online na porta ${PORT}`);
+  // Owner-requested one-time per-deploy Environment audit via PRIVATE Render
+  // logs. Log only allowlisted variable NAMES; never values or credentials.
+  const redacted = configuredJarvisEnvInventory(process.env);
+  const namesOnly = redacted.variables.filter((v) => v.configured).map((v) => v.name);
+  console.info("[JARVIS_ENV_AUDIT_NAMES_ONLY]", JSON.stringify(namesOnly));
 });
 if (process.env.JARVIS_GITHUB_ACCESS_DIAGNOSTICS === "true") {
   void logSafeGitHubAccessDiagnostics().catch(() => {
