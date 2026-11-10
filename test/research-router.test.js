@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  classifyResearchQuery, researchBySpecialty, researchRouterPolicy,
+  classifyResearchQuery, validateResearchQuery, researchBySpecialty, researchRouterPolicy,
   reserveResearchDailyQuota, configuredJarvisEnvInventory,
 } from "../jarvis-research/research-router.mjs";
 
@@ -42,6 +42,14 @@ test("news and specialist research are delegated by topic", () => {
   assert.equal(classifyResearchQuery("artigo científico sobre baterias"), "specialist");
   assert.equal(classifyResearchQuery("previsão para compras de uma casa"), "general");
   assert.equal(classifyResearchQuery("oi"), "invalid");
+});
+
+test("research query must reject control characters and oversized text", () => {
+  for (const raw of [null, "", "oi", "teste\ncom quebra", "site\u0000secreto",
+    "texto\u001f", "a".repeat(181), 1]) {
+    assert.throws(() => validateResearchQuery(raw), TypeError);
+  }
+  assert.equal(validateResearchQuery("  notícias do Brasil  "), "notícias do Brasil");
 });
 
 test("no key or paid researcher is used by default", () => {
