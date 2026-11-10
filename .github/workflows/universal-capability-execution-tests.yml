@@ -1,0 +1,29 @@
+name: JARVIS Universal Capability Execution Tests
+
+on:
+  pull_request:
+    paths:
+      - "jarvis-capabilities/universal-capability-execution.mjs"
+      - "jarvis-capabilities/test/universal-capability-execution.test.mjs"
+      - ".github/workflows/universal-capability-execution-tests.yml"
+  push:
+    branches:
+      - feature/universal-capability-execution
+    paths:
+      - "jarvis-capabilities/universal-capability-execution.mjs"
+      - "jarvis-capabilities/test/universal-capability-execution.test.mjs"
+      - ".github/workflows/universal-capability-execution-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  universal-capability-execution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check syntax
+        run: node --check jarvis-capabilities/universal-capability-execution.mjs
+      - name: Run unit tests
+        run: node --test jarvis-capabilities/test/universal-capability-execution.test.mjs
