@@ -1,0 +1,33 @@
+name: JARVIS Skills API — read-only tests
+
+on:
+  pull_request:
+    paths:
+      - "skills.js"
+      - "server.js"
+      - "test/**"
+      - "package.json"
+      - ".github/workflows/skills-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-readonly-skills:
+    name: Verify skills safety and server syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Check syntax without any network provider or database
+        run: |
+          node --check server.js
+          node --check skills.js
+          node --check test/skills.test.js
+      - name: Run offline read-only skills tests
+        run: npm test
