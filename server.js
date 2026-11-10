@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
-import { researchBySpecialty, researchRouterPolicy, reserveResearchDailyQuota, configuredJarvisEnvInventory, validateResearchQuery } from "./jarvis-research/research-router.mjs";
+import { researchBySpecialty, researchRouterPolicy, reserveResearchDailyQuota, reserveResearchEngineQuota, DAILY_RESEARCH_LIMIT, PAID_RESEARCHER_DAILY_LIMITS, configuredJarvisEnvInventory, validateResearchQuery } from "./jarvis-research/research-router.mjs";
 import { freeChatPolicy, chooseFreeChatProvider, validateFreeChatMessage, reserveFreeChatDailyQuota } from "./jarvis-capabilities/free-chat-policy.mjs";
 import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 import { randomUUID } from "node:crypto";
@@ -268,7 +268,10 @@ function cleanWebText(value, maxLength = MAX_WEB_TEXT_PER_RESULT) {
 
 async function searchWeb(message) {
   // Keyless EBC and GDELT; Tavily/Exa only with verified-free owner opt-in.
-  return researchBySpecialty(buildSearchQuery(message), { env: process.env });
+  return researchBySpecialty(buildSearchQuery(message), {
+    env: process.env,
+    reservePaidEngine: (id) => reserveResearchEngineQuota(pool, id),
+  });
 }
 
 function formatWebResearch(webSearch) {
@@ -1837,7 +1840,8 @@ app.get("/api/research/status", requirePairedFreeChatDevice, (_req, res) => {
       configured: true,
     })),
     noSecretValues: true,
-    maxResearchRequestsPerDay: 6,
+    maxResearchRequestsPerDay: DAILY_RESEARCH_LIMIT,
+    externalResearcherDailyLimits: PAID_RESEARCHER_DAILY_LIMITS,
   });
 });
 
@@ -1857,10 +1861,16 @@ app.post("/api/research/query", requirePairedFreeChatDevice, async (req, res) =>
     return res.status(503).json({ error: "Cota de pesquisa indisponível. Nada foi pesquisado." });
   }
   if (!quota.accepted) {
-    return res.status(429).json({ error: "Limite de seis pesquisas por dia atingido." });
+    return res.status(429).json({
+      error: "Limite diário de pesquisas atingido neste aparelho.",
+      dailyLimit: DAILY_RESEARCH_LIMIT,
+    });
   }
   try {
-    const found = await researchBySpecialty(query, { env: process.env });
+    const found = await researchBySpecialty(query, {
+      env: process.env,
+      reservePaidEngine: (id) => reserveResearchEngineQuota(pool, id),
+    });
     return res.json({
       schemaVersion: 1,
       category: found.category,

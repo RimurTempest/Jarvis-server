@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyResearchQuery, validateResearchQuery, researchBySpecialty, researchRouterPolicy,
-  reserveResearchDailyQuota, configuredJarvisEnvInventory,
+  reserveResearchDailyQuota, reserveResearchEngineQuota,
+  DAILY_RESEARCH_LIMIT, PAID_RESEARCHER_DAILY_LIMITS,
+  configuredJarvisEnvInventory,
 } from "../jarvis-research/research-router.mjs";
 
 const testEnv = {
@@ -101,6 +103,7 @@ test("general research refuses paid tools unless explicitly free-attested", asyn
   const calls2 = [];
   const found = await researchBySpecialty("como escolher carregador", {
     env: optIn, fetchImpl: mockFetcher(calls2),
+    reservePaidEngine: async () => ({ accepted: true }),
   });
   assert.equal(found.results[0].researcher, "tavily");
   assert.equal(calls2.length, 1);
@@ -116,6 +119,7 @@ test("Exa is only an optional specialist researcher with explicit approval", asy
   };
   const result = await researchBySpecialty("manual técnico da bateria", {
     env, fetchImpl: mockFetcher(calls),
+    reservePaidEngine: async () => ({ accepted: true }),
   });
   assert.ok(result.results.some((x) => x.researcher === "exa"));
   assert.equal(calls.length, 1);
@@ -138,15 +142,66 @@ test("reported environment inventory contains names and presence, never secret v
   assert.ok(!JSON.stringify(vars).includes("NON_JARVIS_SECRET"));
 });
 
-test("research daily allowance reserves at most six calls", async () => {
+test("daily allowance supports 100 queries per device, not only six", async () => {
   let used = 0;
   const pool = { query: async (sql, params) => {
     if (sql.startsWith("CREATE TABLE")) return { rowCount: 0, rows: [] };
-    assert.equal(params[1], 6);
-    if (used === 6) return { rowCount: 0, rows: [] };
+    assert.equal(params[1], DAILY_RESEARCH_LIMIT);
+    assert.equal(DAILY_RESEARCH_LIMIT, 100);
+    if (used === DAILY_RESEARCH_LIMIT) return { rowCount: 0, rows: [] };
     return { rowCount: 1, rows: [{ request_count: ++used }] };
   } };
-  for (let i = 0; i < 6; i++) assert.equal(
+  for (let i = 0; i < DAILY_RESEARCH_LIMIT; i++) assert.equal(
     (await reserveResearchDailyQuota(pool, "phone-id")).accepted, true);
   assert.equal((await reserveResearchDailyQuota(pool, "phone-id")).accepted, false);
+});
+
+test("Tavily and Exa are separately capped across all devices", async () => {
+  const counts = { tavily: 0, exa: 0 };
+  const pool = { query: async (sql, params) => {
+    if (sql.startsWith("CREATE TABLE")) return { rowCount: 0, rows: [] };
+    const engine = params[0];
+    assert.equal(params[1], PAID_RESEARCHER_DAILY_LIMITS[engine]);
+    if (counts[engine] >= params[1]) return { rowCount: 0, rows: [] };
+    return { rowCount: 1, rows: [{ request_count: ++counts[engine] }] };
+  } };
+  for (const engine of ["tavily", "exa"]) {
+    const limit = PAID_RESEARCHER_DAILY_LIMITS[engine];
+    for (let i = 0; i < limit; i++) assert.equal(
+      (await reserveResearchEngineQuota(pool, engine)).accepted, true);
+    assert.equal((await reserveResearchEngineQuota(pool, engine)).accepted, false);
+  }
+  assert.equal(counts.tavily, 5);
+  assert.equal(counts.exa, 3);
+  await assert.rejects(() => reserveResearchEngineQuota(pool, "unknown"), TypeError);
+});
+
+test("paid researcher cannot run if its global quota checker is missing or exhausted", async () => {
+  const env = {
+    ...testEnv, JARVIS_SEARCH_EXA_ENABLED: "true",
+    JARVIS_SEARCH_EXA_FREE_ATTESTED: "true",
+  };
+  const calls = [];
+  const noChecker = await researchBySpecialty("manual técnico da bateria", {
+    env, fetchImpl: mockFetcher(calls),
+  });
+  assert.equal(calls.length, 0);
+  assert.ok(noChecker.researchers.some((r) => r.id === "exa" && !r.ok));
+  const denied = await researchBySpecialty("manual técnico da bateria", {
+    env, fetchImpl: mockFetcher(calls),
+    reservePaidEngine: async () => ({ accepted: false }),
+  });
+  assert.equal(calls.length, 0);
+  assert.equal(denied.available, false);
+});
+
+test("keyless Agency Brasil/GDELT continue to run without paid quota", async () => {
+  const calls = [];
+  const response = await researchBySpecialty("notícias do Brasil hoje energia", {
+    env: testEnv,
+    fetchImpl: mockFetcher(calls),
+    reservePaidEngine: async () => { throw new Error("should never touch paid quota"); },
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(response.available, true);
 });
