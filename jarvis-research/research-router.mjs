@@ -16,6 +16,32 @@ const EXA_SEARCH = "https://api.exa.ai/search";
 const TIMEOUT_MS = 8500;
 const BUDGET_BYTES = 450_000;
 const RECENT_RSS_DAYS = 7;
+export const DAILY_RESEARCH_LIMIT = 100; // per paired Android, UTC day
+export const PAID_RESEARCHER_DAILY_LIMITS = Object.freeze({
+  tavily: 5,  // shared across ALL devices, only after verified-free opt-in
+  exa: 3,     // shared across ALL devices, only after verified-free opt-in
+});
+const PUBLIC_CACHE_TTL_MS = 3 * 60 * 1000;
+const MAX_PUBLIC_CACHE_ENTRIES = 64;
+const publicSearchCache = new Map();
+
+async function cachedPublicSearch(key, loader, enabled = true) {
+  if (!enabled) return loader(); // deterministic tests, avoid cross-test cache
+  const now = Date.now();
+  const prev = publicSearchCache.get(key);
+  if (prev && prev.expiresAt > now) return prev.promise;
+  if (publicSearchCache.size >= MAX_PUBLIC_CACHE_ENTRIES) {
+    const oldest = publicSearchCache.keys().next().value;
+    publicSearchCache.delete(oldest);
+  }
+  const entry = { expiresAt: now + PUBLIC_CACHE_TTL_MS };
+  entry.promise = Promise.resolve().then(loader).catch((err) => {
+    if (publicSearchCache.get(key) === entry) publicSearchCache.delete(key);
+    throw err;
+  });
+  publicSearchCache.set(key, entry);
+  return entry.promise;
+}
 
 const normalize = (raw) =>
   String(raw ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -150,7 +176,11 @@ function relevantRss(xml, rawQuery, nowMs = Date.now()) {
 }
 
 async function fetchAgencyBrazil(query, fetchImpl) {
-  const xml = await aborting(BRAZIL_RSS, { method: "GET" }, fetchImpl);
+  const xml = await cachedPublicSearch(
+    "agencia-brasil-feed",
+    () => aborting(BRAZIL_RSS, { method: "GET" }, fetchImpl),
+    fetchImpl === fetch
+  );
   return limitSources(relevantRss(xml, query), "agencia-brasil");
 }
 async function fetchGdelt(query, fetchImpl) {
@@ -158,7 +188,12 @@ async function fetchGdelt(query, fetchImpl) {
     query: query.slice(0, 130), mode: "artlist", format: "json", maxrecords: "6",
     timespan: "3d", sort: "datedesc",
   });
-  const raw = await aborting(GDELT_DOC + "?" + q, { method: "GET" }, fetchImpl);
+  const requestUrl = GDELT_DOC + "?" + q;
+  const raw = await cachedPublicSearch(
+    requestUrl,
+    () => aborting(requestUrl, { method: "GET" }, fetchImpl),
+    fetchImpl === fetch
+  );
   const json = JSON.parse(raw);
   const articles = Array.isArray(json.articles) ? json.articles : [];
   return limitSources(articles.slice(0, 8).map((a) => ({
@@ -227,6 +262,19 @@ export async function researchBySpecialty(query, options = {}) {
   if (kind === "global-news") add("tavily", () => fetchTavily(query, env, fetchImpl));
 
   const reports = await Promise.all(jobs.map(async ({ id, action }) => {
+    // Explicitly enabled external APIs still require an atomic, global
+    // per-engine allowance before every external call. Fail closed if the
+    // budget mechanism is absent or the Postgres database is unavailable.
+    if (Object.hasOwn(PAID_RESEARCHER_DAILY_LIMITS, id)) {
+      try {
+        const quota = await options.reservePaidEngine?.(id);
+        if (quota?.accepted !== true) {
+          return { id, ok: false, results: [], error: "researcher_quota_exhausted" };
+        }
+      } catch {
+        return { id, ok: false, results: [], error: "researcher_quota_unavailable" };
+      }
+    }
     try { return { id, ok: true, results: await action() }; }
     catch (err) { return { id, ok: false, results: [], error: safeText(err?.name || "unavailable", 32) }; }
   }));
@@ -254,8 +302,8 @@ export async function researchBySpecialty(query, options = {}) {
 }
 
 
-const DAILY_RESEARCH_LIMIT = 6;
 let researchTableReady = null;
+let researcherTableReady = null;
 
 /** Every explicit lookup has a durable per-device quota, even if only public feeds are used. */
 export async function reserveResearchDailyQuota(pool, deviceId) {
@@ -284,6 +332,36 @@ export async function reserveResearchDailyQuota(pool, deviceId) {
     accepted: result.rowCount === 1,
     used: result.rowCount === 1 ? Number(result.rows[0].request_count) : DAILY_RESEARCH_LIMIT,
     limit: DAILY_RESEARCH_LIMIT,
+  };
+}
+
+/** Reserve a provider-wide allowance, shared by ALL phones, before API use. */
+export async function reserveResearchEngineQuota(pool, researcherId) {
+  if (!pool?.query || !Object.hasOwn(PAID_RESEARCHER_DAILY_LIMITS, researcherId)) {
+    throw new TypeError("Pesquisador externo inválido.");
+  }
+  if (!researcherTableReady) {
+    researcherTableReady = pool.query(`CREATE TABLE IF NOT EXISTS jarvis_research_engine_daily (
+      researcher_id TEXT NOT NULL, day_utc DATE NOT NULL,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (researcher_id, day_utc)
+    )`).catch((err) => { researcherTableReady = null; throw err; });
+  }
+  await researcherTableReady;
+  const limit = PAID_RESEARCHER_DAILY_LIMITS[researcherId];
+  const result = await pool.query(
+    `INSERT INTO jarvis_research_engine_daily (researcher_id, day_utc, request_count)
+     VALUES ($1, (NOW() AT TIME ZONE 'UTC')::date, 1)
+     ON CONFLICT (researcher_id, day_utc)
+     DO UPDATE SET request_count = jarvis_research_engine_daily.request_count + 1
+       WHERE jarvis_research_engine_daily.request_count < $2
+     RETURNING request_count`,
+    [researcherId, limit]
+  );
+  return {
+    accepted: result.rowCount === 1,
+    used: result.rowCount === 1 ? Number(result.rows[0].request_count) : limit,
+    limit,
   };
 }
 
