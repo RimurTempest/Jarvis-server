@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
-import { freeChatPolicy, validateFreeChatMessage, reserveFreeChatDailyQuota } from "./jarvis-capabilities/free-chat-policy.mjs";
+import { freeChatPolicy, chooseFreeChatProvider, validateFreeChatMessage, reserveFreeChatDailyQuota } from "./jarvis-capabilities/free-chat-policy.mjs";
 import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 import { randomUUID } from "node:crypto";
 import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext, runProvidersSequentially } from "./jarvis-capabilities/provider-failover-policy.mjs";
@@ -1852,7 +1852,7 @@ app.get("/api/self-improvement/notifications", requireAuth, async (req, res) => 
  */
 async function requirePairedFreeChatDevice(req, res, next) {
   const header = req.headers.authorization || "";
-  const token = /^Bearer\\s+([^\\s]{32,200})$/i.exec(header)?.[1];
+  const token = /^Bearer\s+([^\s]{32,200})$/i.exec(header)?.[1];
   const deviceId = req.headers["x-jarvis-device-id"];
   if (!pool || !token || typeof deviceId !== "string" || !deviceId) {
     return res.status(401).json({ error: "Pareamento Android necessário." });
@@ -1871,13 +1871,13 @@ async function requirePairedFreeChatDevice(req, res, next) {
 
 app.get("/api/chat/safe/status", requirePairedFreeChatDevice, (req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  return res.json({ schemaVersion: 1, ...freeChatPolicy(process.env) });
+  return res.json({ schemaVersion: 1, ...freeChatPolicy(process.env, providers) });
 });
 
 app.post("/api/chat/safe", requirePairedFreeChatDevice, async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
-  const policy = freeChatPolicy(process.env);
+  const policy = freeChatPolicy(process.env, providers);
   if (!policy.enabled) {
     return res.status(503).json({
       error: "A conversa gratuita ainda não foi autorizada ou configurada no servidor.",
@@ -1902,17 +1902,18 @@ app.post("/api/chat/safe", requirePairedFreeChatDevice, async (req, res) => {
     return res.status(429).json({ error: "Limite diário de conversa atingido.", code: "FREE_DAILY_LIMIT" });
   }
   try {
-    // Exact endpoint/model. NEVER run the generic multi-provider fallback.
-    // No tools, function calls, web requests or account-billed OpenAI API here.
-    const groq = new OpenAI({
-      apiKey: process.env.GROQ_API_KEY,
-      baseURL: "https://api.groq.com/openai/v1",
-      timeout: 18000,
-      maxRetries: 0,
-    });
-    const response = await groq.chat.completions.create({
-      model: policy.model,
-      max_completion_tokens: policy.maxOutputTokens,
+    // Use EXISTING preconfigured provider clients, but only exact models
+    // approved as free by the owner. Never call the generic fallback.
+    // One approved provider per request, no automatic retries.
+    const selected = chooseFreeChatProvider(process.env, providers, quota.used);
+    if (!selected) {
+      return res.status(503).json({ error: "Nenhum modelo gratuito foi autorizado." });
+    }
+    const response = await selected.client.chat.completions.create({
+      model: selected.model,
+      ...(selected.name.toLowerCase() === "groq"
+        ? { max_completion_tokens: policy.maxOutputTokens }
+        : { max_tokens: policy.maxOutputTokens }),
       stream: false,
       messages: [
         {
@@ -1929,7 +1930,9 @@ app.post("/api/chat/safe", requirePairedFreeChatDevice, async (req, res) => {
     return res.json({
       schemaVersion: 1,
       response: reply.trim().slice(0, 3000),
-      model: policy.model,
+      provider: selected.name,
+      model: selected.model,
+      freeOnly: true,
       remainingToday: Math.max(0, quota.limit - quota.used),
       executedActions: false,
       persisted: false,
