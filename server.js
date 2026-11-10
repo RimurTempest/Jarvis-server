@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
-import { researchBySpecialty, researchRouterPolicy } from "./jarvis-research/research-router.mjs";
+import { researchBySpecialty, researchRouterPolicy, reserveResearchDailyQuota, configuredJarvisEnvInventory } from "./jarvis-research/research-router.mjs";
 import { freeChatPolicy, chooseFreeChatProvider, validateFreeChatMessage, reserveFreeChatDailyQuota } from "./jarvis-capabilities/free-chat-policy.mjs";
 import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 import { randomUUID } from "node:crypto";
@@ -1821,6 +1821,66 @@ async function requirePairedFreeChatDevice(req, res, next) {
     return res.status(503).json({ error: "Autenticação de dispositivo indisponível." });
   }
 }
+
+// Authenticated owner-only configuration audit: NEVER return environment values.
+// The Android preview uses this before enabling live researched answers.
+app.get("/api/research/status", requirePairedFreeChatDevice, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  return res.json({
+    schemaVersion: 1,
+    service: "JARVIS",
+    policy: researchRouterPolicy(process.env),
+    environment: configuredJarvisEnvInventory(process.env),
+    providers: providers.map((p) => ({
+      name: p.name,
+      model: p.model,
+      configured: true,
+    })),
+    noSecretValues: true,
+    maxResearchRequestsPerDay: 6,
+  });
+});
+
+app.post("/api/research/query", requirePairedFreeChatDevice, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  const query = req.body?.query;
+  if (typeof query !== "string" || query.length < 3 || query.length > 180 ||
+      /[\\u0000-\\u001f]/.test(query)) {
+    return res.status(400).json({ error: "Consulta inválida: use entre 3 e 180 caracteres." });
+  }
+  let quota;
+  try {
+    quota = await reserveResearchDailyQuota(pool, req.freeChatDeviceId);
+  } catch {
+    return res.status(503).json({ error: "Cota de pesquisa indisponível. Nada foi pesquisado." });
+  }
+  if (!quota.accepted) {
+    return res.status(429).json({ error: "Limite de seis pesquisas por dia atingido." });
+  }
+  try {
+    const found = await researchBySpecialty(query, { env: process.env });
+    return res.json({
+      schemaVersion: 1,
+      category: found.category,
+      results: found.results.map((source) => ({
+        title: source.title, url: source.url,
+        publishedDate: source.publishedDate, text: source.text,
+        researcher: source.researcher,
+      })),
+      available: found.available,
+      reason: found.reason,
+      researchers: found.researchers,
+      remainingToday: quota.limit - quota.used,
+      executedActions: false,
+      persistedConversation: false,
+      freeOnly: true,
+    });
+  } catch {
+    return res.status(503).json({ error: "Pesquisadores indisponíveis. Não foi possível confirmar fontes." });
+  }
+});
 
 app.get("/api/chat/safe/status", requirePairedFreeChatDevice, (req, res) => {
   res.setHeader("Cache-Control", "no-store");
