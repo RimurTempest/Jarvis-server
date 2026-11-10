@@ -256,20 +256,20 @@ export async function reserveResearchDailyQuota(pool, deviceId) {
     throw new TypeError("Pesquisa não autorizada para este dispositivo.");
   }
   if (!researchTableReady) {
-    researchTableReady = pool.query(\`CREATE TABLE IF NOT EXISTS jarvis_research_daily (
+    researchTableReady = pool.query(`CREATE TABLE IF NOT EXISTS jarvis_research_daily (
       device_id TEXT NOT NULL, day_utc DATE NOT NULL,
       request_count INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (device_id, day_utc)
-    )\`).catch((e) => { researchTableReady = null; throw e; });
+    )`).catch((e) => { researchTableReady = null; throw e; });
   }
   await researchTableReady;
   const result = await pool.query(
-    \`INSERT INTO jarvis_research_daily (device_id, day_utc, request_count)
+    `INSERT INTO jarvis_research_daily (device_id, day_utc, request_count)
      VALUES ($1, (NOW() AT TIME ZONE 'UTC')::date, 1)
      ON CONFLICT (device_id, day_utc)
      DO UPDATE SET request_count = jarvis_research_daily.request_count + 1
        WHERE jarvis_research_daily.request_count < $2
-     RETURNING request_count\`,
+     RETURNING request_count`,
     [deviceId, DAILY_RESEARCH_LIMIT]
   );
   return {
@@ -293,7 +293,7 @@ export function configuredJarvisEnvInventory(env = {}) {
   ];
   for (let n = 1; n <= 10; n++) {
     for (const suffix of ["NAME", "MODEL", "BASE_URL", "API_KEY"]) {
-      essential.push(\`JARVIS_PROVIDER_\${n}_\${suffix}\`);
+      essential.push(`JARVIS_PROVIDER_${n}_${suffix}`);
     }
   }
   const names = [...new Set([...configured, ...essential])].sort();
