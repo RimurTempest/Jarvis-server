@@ -5,6 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 import { SYSTEM_PROMPT } from "./behavior.js";
 import { researchBySpecialty, researchRouterPolicy, reserveResearchDailyQuota, reserveResearchEngineQuota, DAILY_RESEARCH_LIMIT, PAID_RESEARCHER_DAILY_LIMITS, configuredJarvisEnvInventory, validateResearchQuery } from "./jarvis-research/research-router.mjs";
 import { freeChatPolicy, chooseFreeChatProvider, validateFreeChatMessage, reserveFreeChatDailyQuota } from "./jarvis-capabilities/free-chat-policy.mjs";
+import { validateEphemeralHistory, createSafeVoiceMessages, safeStreamLine, consumeSafeChatStream } from "./jarvis-capabilities/free-chat-stream.mjs";
 import { buildSkillsCatalog, resolveSkillSuggestion, validSkillsToken } from "./skills.js";
 import { randomUUID } from "node:crypto";
 import { providerCooldownMs, orderProvidersByCooldown, mergeHistoricalContext, runProvidersSequentially } from "./jarvis-capabilities/provider-failover-policy.mjs";
@@ -1895,6 +1896,90 @@ app.post("/api/research/query", requirePairedFreeChatDevice, async (req, res) =>
 app.get("/api/chat/safe/status", requirePairedFreeChatDevice, (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   return res.json({ schemaVersion: 1, ...freeChatPolicy(process.env, providers) });
+});
+
+
+/**
+ * Restores JARVIS 2.6 voice streaming without the legacy chat's tools.
+ * Only the already-approved free-model pool participates in round-robin.
+ */
+app.post("/api/chat/safe/stream", requirePairedFreeChatDevice, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-transform");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  const policy = freeChatPolicy(process.env, providers);
+  if (!policy.enabled) return res.status(503).json({
+    error: "O chat gratuito ainda não está autorizado no servidor.",
+    code: "FREE_CHAT_DISABLED",
+  });
+  let message, history;
+  try {
+    message = validateFreeChatMessage(req.body?.message);
+    history = validateEphemeralHistory(req.body?.history);
+  } catch {
+    return res.status(400).json({ error: "Mensagem ou histórico inválido." });
+  }
+  let quota;
+  try {
+    quota = await reserveFreeChatDailyQuota(pool, req.freeChatDeviceId);
+  } catch {
+    return res.status(503).json({ error: "Cota de conversa indisponível." });
+  }
+  if (!quota.accepted) return res.status(429).json({
+    error: "Limite gratuito de conversa atingido hoje.",
+    code: "FREE_DAILY_LIMIT",
+  });
+  const selected = chooseFreeChatProvider(process.env, providers, quota.used);
+  if (!selected) return res.status(503).json({ error: "Nenhum modelo gratuito autorizado." });
+  let stream;
+  try {
+    stream = await selected.client.chat.completions.create({
+      model: selected.model,
+      ...(selected.name.toLowerCase() === "groq"
+        ? { max_completion_tokens: policy.maxOutputTokens }
+        : { max_tokens: policy.maxOutputTokens }),
+      stream: true,
+      messages: createSafeVoiceMessages(message, history),
+    });
+  } catch (error) {
+    const limited = Number(error?.status) === 429;
+    return res.status(limited ? 429 : 503).json({
+      error: limited
+        ? "O modelo gratuito atingiu seu limite; sem fallback pago."
+        : "Não foi possível iniciar a resposta do modelo gratuito.",
+      code: limited ? "PROVIDER_RATE_LIMIT" : "PROVIDER_UNAVAILABLE",
+    });
+  }
+  res.status(200);
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  res.write(safeStreamLine("start", {
+    schemaVersion: 1, provider: selected.name, model: selected.model,
+    freeOnly: true, executedActions: false, persisted: false,
+  }));
+  try {
+    let disconnected = false;
+    res.on("close", () => { disconnected = true; });
+    const count = await consumeSafeChatStream(stream, (delta) => {
+      if (!disconnected && !res.writableEnded) {
+        res.write(safeStreamLine("delta", { text: delta }));
+      }
+    });
+    if (!disconnected && !res.writableEnded) {
+      if (count === 0) res.write(safeStreamLine("error", { error: "O modelo não retornou texto." }));
+      else res.write(safeStreamLine("done", {
+        freeOnly: true, executedActions: false, persisted: false,
+        remainingToday: Math.max(0, quota.limit - quota.used),
+      }));
+    }
+  } catch (error) {
+    console.error("[safe-stream] interrupted", error?.name || "Error");
+    if (!res.writableEnded) res.write(safeStreamLine("error", {
+      error: "A resposta do provedor gratuito foi interrompida.",
+    }));
+  } finally {
+    if (!res.writableEnded) res.end();
+  }
 });
 
 app.post("/api/chat/safe", requirePairedFreeChatDevice, async (req, res) => {
