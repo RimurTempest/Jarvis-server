@@ -1,57 +1,77 @@
-# JARVIS — conversa IA gratuita, isolada e controlada (fase 2)
+# JARVIS — conversa com IA pelos provedores existentes, custo zero controlado
 
 ## Objetivo
-Adicionar **conversação somente por texto** no aplicativo 2.7.6 sem habilitar
-o chat completo, ferramentas, pesquisa, habilidades remotas, automação,
-memória persistente, autoaperfeiçoamento ou qualquer provedor pago.
+O aplicativo 2.7.6 conversa por texto com o servidor sem habilitar ferramentas,
+pesquisa, memória persistente, automações, autoaperfeiçoamento ou ações Android.
 
-## Endpoints
-- `GET /api/chat/safe/status`: somente para dispositivo pareado e ativo.
-  Retorna se o modo está habilitado, modelo fixo, limite e restrições.
-- `POST /api/chat/safe`: somente para dispositivo pareado. Recebe
-  `{"message":"olá"}` (até 700 caracteres), nunca áudio nem localização.
-  Retorna até 3.000 caracteres da resposta e a cota diária restante.
-- Credencial de pareamento Android validada e revogável no PostgreSQL.
-  Um token de administração **não** substitui o pareamento.
-- Requisição de IA limitada a **um único** modelo
-  `openai/gpt-oss-20b` no GroqCloud. Sem fallback para outros provedores.
-- Sem histórico ou memória nesta rota. Somente contagem por aparelho/dia
-  em uma tabela PostgreSQL própria, necessária ao controle de cota.
+O servidor **já aceita até 10 provedores OpenAI-compatíveis** configurados
+pelas variáveis `JARVIS_PROVIDER_1_NAME`, `JARVIS_PROVIDER_1_MODEL`,
+`JARVIS_PROVIDER_1_API_KEY`, `JARVIS_PROVIDER_1_BASE_URL`, até o slot 10.
+O provedor Groq também pode existir por `GROQ_API_KEY`.
+O código de chat seguro reutiliza exclusivamente os **clientes já registrados**.
+Não requer nova API key nem novo cartão.
 
-## Política de custo (fail closed)
-A rota fica DESATIVADA até todas as três condições:
-1. `GROQ_API_KEY` configurado no ambiente protegido do Render;
-2. `JARVIS_FREE_CHAT_CONFIRMED_FREE_PLAN=true` somente após o
-   proprietário verificar pessoalmente, no console Groq, que está no plano
-   **Free**, sem faturamento ativo, cartão ou upgrade;
-3. `JARVIS_FREE_CHAT_ENABLED=true`.
+Provedores reconhecidos nesta fase, quando o endpoint HTTPS corresponder:
+HuggingFace, NVIDIA, ZAI/Z.ai, OpenRouter, Cloudflare, Groq e Gemini.
+Nem todo endpoint nem todo modelo desses provedores é necessariamente gratuito.
 
-NUNCA enviar a chave por GitHub, ChatGPT, logs ou arquivos.
-**O servidor não consegue auditar o estado real de cobrança do provedor.**
-Essas variáveis são uma declaração operacional, não comprovação técnica.
-Se o plano passar a ser pago, desabilitar imediatamente o modo e remover
-a variável da primeira condição ou alterar ENABLED para false.
+## Política obrigatória (desligado por padrão)
 
-O servidor reserva no PostgreSQL uma cota máxima de **8 pedidos/dia por
-aparelho**, antes de cada consulta ao Groq. Falhas também consomem cota
-para impedir loops. Uma resposta tem teto de 384 tokens de conclusão.
-Se houver erro ou limite no provedor, falha sem tentar provedor alternativo.
-Esses limites reduzem uso, mas **não são garantia monetária por si sós**:
-é indispensável manter o provedor no plano gratuito sem faturamento.
+Para liberar o chat, o responsável precisa confirmar no painel de **cada
+provedor e cada modelo** que a conta não cobrará nada, nem excedentes, e
+que está dentro de cota gratuita. O servidor NÃO consegue validar sozinho
+o estado de faturamento dessas contas.
 
-## Segurança e limitações
-- Sem tool calls, busca web, execução de ação Android, fila, auto-merge ou OTA.
-- Não reaproveita a rota antiga `/api/chat`, que possui fluxos de aprendizado.
-- Não persiste texto das perguntas ou respostas; autenticação do dispositivo
-  atualiza sua data de acesso conforme a infraestrutura existente.
-- O serviço de reconhecimento de voz do Android é independente e pode
-  enviar áudio ao fornecedor do reconhecedor, conforme sistema e configuração.
-- A prévia Android requer pareamento explícito; cada pacote de testes é uma
-  instalação independente. Ações Android e OTA permanecem bloqueadas.
-- Testar localmente: `npm test`; rodar CI e revisão antes de mesclar.
+Três variáveis não secretas de controle:
+- `JARVIS_FREE_CHAT_ENABLED=true` — habilitação explícita;
+- `JARVIS_FREE_CHAT_CONFIRMED_FREE_PLAN=true` — declaração explícita do
+  proprietário de que as contas/modelos autorizados estão em plano
+  gratuito, sem cobrança;
+- `JARVIS_FREE_CHAT_APPROVED_MODELS_JSON` — JSON exato dos pares
+  **nome e identificador do modelo já configurados**, por exemplo
+  `[{"provider":"Groq","model":"openai/gpt-oss-20b"}]` **somente se**
+  esse par tiver sido conferido no console da conta.
 
-## Importante
-Publicar esta rota **desligada** em produção é seguro por padrão.
-Não preencher/ativar as variáveis sem verificar o estado de cobrança da
-conta no console do provedor. Nenhum custo ou chamada de IA é efetuado
-pelo deploy, pelo status ou pelos testes.
+Não use nomes aproximados nem um modelo fictício. O JSON poderá conter
+outros pares já configurados (`HuggingFace`, `NVIDIA`, `ZAI`,
+`OpenRouter`, `Cloudflare`, `Gemini`), mas cada modelo deve ser
+confirmado individualmente e ser idêntico a `JARVIS_PROVIDER_N_MODEL`.
+No OpenRouter, só são aceitos nomes de modelos terminados em `:free`.
+O código também restringe cada nome ao domínio oficial do provedor:
+uma rota que aponte para `api.openai.com` não pode passar como Groq
+ou outro serviço. Uma entrada inválida desabilita a lista inteira.
+
+Nenhuma chave deverá ser copiada para chat, commit, screenshot ou logs.
+**Não habilite as três variáveis antes das verificações de cobrança.**
+Não presuma que créditos promocionais equivalem a cobrança permanentemente
+desativada.
+
+## APIs
+
+- `GET /api/chat/safe/status`: autenticado por token revogável de aparelho
+  pareado. Retorna `enabled`, `freeOnly`, `providerCount`, nomes e
+  modelos aprovados, teto diário e restrições de execução; **não chama IA**.
+- `POST /api/chat/safe`: aparelho pareado, mensagem de até 700 caracteres,
+  reservando **um dos 8 pedidos/dia** por aparelho em PostgreSQL antes de
+  qualquer chamada externa. Seleciona um único par previamente aprovado
+  conforme o contador do dia, em rotação determinística; **não tenta
+  alternativas** se esse provedor falhar.
+- Teto de 384 tokens de conclusão por solicitação. Se o provedor falhar,
+  não haverá fallback para modelos gratuitos nem pagos naquela chamada.
+- Dados da mensagem/resposta não são gravados neste endpoint; a cota diária
+  exige guardar identificador do aparelho, data e contagem. A infraestrutura
+  de pareamento pode atualizar metadados de uso.
+
+A rota padrão `/api/chat` continua separada e não é usada na prévia,
+porque ela inclui memória, tarefas e fluxos de autoaperfeiçoamento.
+
+## Segurança de deploy
+
+É seguro publicar o código com as variáveis ausentes ou `false`: sem
+aprovação exata, todas as chamadas respondem com chat indisponível e
+**nenhum provedor é chamado**. Sem chave de assinatura Android no servidor.
+Executar `npm test` e validações do GitHub antes de mesclar.
+
+Limites de uso reduzem o consumo, mas **não asseguram custo zero sozinhos**.
+O custo zero depende também de contas sem faturamento habilitado. Havendo
+dúvida, manter `JARVIS_FREE_CHAT_ENABLED=false` até revisar a conta.
