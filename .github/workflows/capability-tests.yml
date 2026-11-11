@@ -59,6 +59,9 @@ jobs:
           node --check jarvis-capabilities/android-device-auth.mjs
           node --check jarvis-capabilities/action-delivery.mjs
           node --check jarvis-capabilities/postgres-action-queue.mjs
+          node --check jarvis-capabilities/android-action-proposal.mjs
+          node --check jarvis-capabilities/android-action-proposal.test.mjs
+          node --check jarvis-capabilities/test/postgres-action-queue.integration.test.mjs
           node --check jarvis-capabilities/universal-task-android-adapters.mjs
           node --check jarvis-capabilities/test/universal-task-android-adapters.test.mjs
           node --check jarvis-capabilities/android-action-routes.mjs
@@ -110,6 +113,8 @@ jobs:
           node --test jarvis-capabilities/test/android-device-auth.test.mjs
           node --test jarvis-capabilities/test/action-delivery.test.mjs
           node --test jarvis-capabilities/test/postgres-action-queue.test.mjs
+          node --test jarvis-capabilities/android-action-proposal.test.mjs
+          node --test jarvis-capabilities/test/postgres-action-queue.integration.test.mjs
           node --test jarvis-capabilities/test/universal-task-android-adapters.test.mjs
           node --test jarvis-capabilities/test/android-action-routes.test.mjs
           node --test jarvis-capabilities/test/secret-scanner.test.mjs

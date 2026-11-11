@@ -58,7 +58,7 @@ test("accepts a result only from the device and lease that received the action",
   }), /não corresponde/);
   const completed = acceptActionResult(claimed, {
     deviceId: "android-primary", leaseToken: "one-time-secret",
-    result: { ok: true, message: "copied" },
+    result: { ok: true, message: "copied", userConfirmed: true },
   });
   assert.equal(completed.state, "completed");
   assert.equal(completed.result.ok, true);

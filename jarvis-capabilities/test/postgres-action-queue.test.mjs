@@ -57,7 +57,11 @@ test("initializes the queue table and indexes", async () => {
   await initializeActionQueue(pool);
   assert.ok(pool.calls.some((call) => call.sql.includes("CREATE TABLE IF NOT EXISTS jarvis_action_queue")));
   assert.ok(pool.calls.some((call) => call.sql.includes("ADD COLUMN IF NOT EXISTS target_device_id")));
-  assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_pending")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("target_device_id IS NULL") && call.sql.includes("state = 'expired'")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("target_device_id = 'legacy-unassigned'")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("ALTER COLUMN target_device_id SET NOT NULL")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("ALTER COLUMN requires_user_confirmation SET DEFAULT TRUE")));
+  assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_target_pending")));
   assert.ok(pool.calls.some((call) => call.sql.includes("idx_jarvis_action_queue_lease")));
 });
 
@@ -89,7 +93,7 @@ test("claims pending actions in a transaction and returns a lease token", async 
       capability_id: "capability-01",
       action: { type: "copy_text", text: "hello" },
       target_device_id: "android-primary",
-      requires_user_confirmation: false,
+      requires_user_confirmation: true,
       expires_at: new Date(Date.now() + 120_000),
       delivery_attempts: 0,
     },
@@ -109,7 +113,7 @@ test("accepts results only with the active device lease and preserves confirmati
       id: "action-01",
       capability_id: "capability-01",
       action: { type: "copy_text", text: "hello" },
-      requires_user_confirmation: false,
+      requires_user_confirmation: true,
       expires_at: new Date(Date.now() + 120_000),
     },
   });
@@ -117,7 +121,7 @@ test("accepts results only with the active device lease and preserves confirmati
     id: "action-01",
     deviceId: "android-primary",
     leaseToken: "known-token",
-    result: { ok: true, message: "copied" },
+    result: { ok: true, message: "copied", userConfirmed: true },
   });
   assert.equal(completed.state, "completed");
   assert.ok(pool.calls.some((call) => call.sql.includes("lease_token_hash = NULL")));

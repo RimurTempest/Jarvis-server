@@ -84,7 +84,8 @@ export function createAndroidActionEnvelope({ id, capabilityId, action, requeste
     throw new RangeError("A ação deve expirar entre agora e os próximos 10 minutos.");
   }
   const normalizedAction = validateAndroidAction(action);
-  const requiresUserConfirmation = normalizedAction.requiresUserConfirmation === true;
+  // Toda ação remota exige uma confirmação explícita no dispositivo.
+  const requiresUserConfirmation = true;
   return {
     id: cleanIdentifier(id, "id"),
     capabilityId: cleanIdentifier(capabilityId, "capabilityId"),
